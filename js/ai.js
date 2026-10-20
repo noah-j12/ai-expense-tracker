@@ -95,6 +95,8 @@ function buildSystemPrompt(s) {
 
 Return one record per separate purchase. A receipt is one record even with many line items. A spoken note may describe several purchases; return one record for each.
 
+Spoken notes come from phone dictation, so they may ramble, include filler words, contain transcription mistakes, or correct themselves ("twenty-two thirty-nine, no, forty-nine"). Use the speaker's final, corrected details and ignore the rest.
+
 Fields:
 - date: purchase date as YYYY-MM-DD. Resolve relative dates ("yesterday", "last Friday") against the date the entry was recorded, which is given with each entry. If no date is shown or stated, use the recorded date and add a review reason saying so.
 - vendor: the business name as a person would write it ("Home Depot", not "THE HOME DEPOT #0412").
