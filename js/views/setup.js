@@ -94,12 +94,12 @@ export function SetupView() {
   }
 
   function business() {
-    const name = h('input', { class: 'input', value: draft.ownerName, placeholder: 'e.g. Chris', autocapitalize: 'words', autocomplete: 'given-name' });
+    const name = h('input', { class: 'input', value: draft.ownerName, placeholder: 'e.g. Sam', autocapitalize: 'words', autocomplete: 'given-name' });
     name.addEventListener('input', () => { draft.ownerName = name.value.trim(); });
     const list = h('div', { class: 'stack' });
     const renderList = () => {
       list.replaceChildren(...draft.businesses.map((b, i) => {
-        const input = h('input', { class: 'input', value: b.name === 'My Business' ? '' : b.name, placeholder: i === 0 ? 'e.g. Todd Construction LLC' : 'Another business', autocapitalize: 'words' });
+        const input = h('input', { class: 'input', value: b.name === 'My Business' ? '' : b.name, placeholder: i === 0 ? 'e.g. Riverside Services LLC' : 'Another business', autocapitalize: 'words' });
         input.addEventListener('input', () => { b.name = input.value.trim(); });
         return draft.businesses.length > 1
           ? h('div', { class: 'input-group' }, input, h('button', { class: 'icon-btn', 'aria-label': 'Remove', onclick: () => { draft.businesses.splice(i, 1); renderList(); } }, icon('x')))

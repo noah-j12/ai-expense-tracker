@@ -9,7 +9,7 @@ import { choiceList, choiceSheet, confirmSheet, field, nameListEditor, promptShe
 import { formatDateTime, fill, h, icon, on, randomSecret, uid } from '../util.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.0.1';
 
 function goBack() {
   if (history.length > 1) history.back();
@@ -43,7 +43,7 @@ function main() {
       h('div', { class: 'section-title' }, 'You'),
       h('div', { class: 'list' },
         navItem({ iconName: 'pen', label: 'Your name', value: s.ownerName || 'Not set', onclick: async () => {
-          const v = await promptSheet({ title: 'Your first name', value: s.ownerName, placeholder: 'e.g. Chris' });
+          const v = await promptSheet({ title: 'Your first name', value: s.ownerName, placeholder: 'e.g. Sam' });
           if (v != null) await updateSettings({ ownerName: v });
         } }),
         navItem({ iconName: 'building', label: 'Businesses', value: String(s.businesses.length), href: '#/settings/businesses' }),
