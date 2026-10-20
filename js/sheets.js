@@ -6,7 +6,7 @@
 import { getFile, kvGet, kvSet, putEntry } from './db.js';
 import { ID_HEADER, fieldValue } from './fields.js';
 import { hasMultipleBusinesses, settings } from './settings.js';
-import { getEntry, listEntries } from './entries.js';
+import { getEntry, hasReceipt, listEntries } from './entries.js';
 import { blobToBase64, emit, safeFileName } from './util.js';
 
 export const SCRIPT_VERSION = 2;
@@ -111,7 +111,7 @@ export async function syncSheets() {
       const values = {};
       for (const c of mapped) if (c.field !== 'receipt') values[c.header] = fieldValue(e, c.field, { sheet: true });
       const item = { id: e.id, values, receiptUrl: e.sheet?.receiptUrl || '' };
-      if (receiptHeader && e.fileId && !item.receiptUrl) {
+      if (receiptHeader && hasReceipt(e) && !item.receiptUrl) {
         if (knownUrls.has(e.fileId)) {
           item.receiptUrl = knownUrls.get(e.fileId);
         } else {

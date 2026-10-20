@@ -1,4 +1,4 @@
-import { listEntries, markExported, needsAttention } from '../entries.js';
+import { hasReceipt, listEntries, markExported, needsAttention } from '../entries.js';
 import { deliverFiles, exportFile, receiptFiles, supportsExcel } from '../exporter.js';
 import { allExportFormats, businessName, exportFormatName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
 import { sheetsConnected } from '../sheets.js';
@@ -120,7 +120,7 @@ export function ExportView() {
     const total = list.filter((e) => e.fields.currency === s.currency).reduce((sum, e) => sum + (Number(e.fields.total) || 0), 0);
     const review = list.filter(needsAttention).length;
     const waiting = entries.filter((e) => e.aiStatus === 'queued' || e.aiStatus === 'processing').length;
-    const photos = new Set(list.map((e) => e.fileId).filter(Boolean)).size;
+    const photos = new Set(list.filter(hasReceipt).map((e) => e.fileId)).size;
     help.textContent = state.format.startsWith('tpl:') ? 'Your own layout, with the same columns as your spreadsheet.' : IMPORT_HELP[state.format] || '';
     const fileType = supportsExcel(state.format) ? state.fileType : 'csv';
 

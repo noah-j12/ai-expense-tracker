@@ -4,6 +4,8 @@ import { createEntry } from './entries.js';
 import { prepareImage } from './image.js';
 import { kick } from './queue.js';
 import { settings } from './settings.js';
+import { voiceEnabled } from './speech.js';
+import { startTalk } from './talk.js';
 import { openSheet, toast } from './ui.js';
 import { h, icon } from './util.js';
 
@@ -93,13 +95,20 @@ function noteSheet(onDone) {
   ta.focus();
 }
 
+// With a voice key: a hands-free conversation. Without one: type or use the keyboard's dictation mic.
 export function openSpeakSheet() {
+  if (voiceEnabled()) startTalk({ onUseKeyboard: (said) => openDictationSheet(said) });
+  else openDictationSheet();
+}
+
+export function openDictationSheet(prefill = '') {
   const ta = h('textarea', {
     class: 'textarea',
     rows: 4,
     autocapitalize: 'sentences',
     placeholder: 'e.g. "$42.18 at Home Depot for lumber, paid with the business card"',
   });
+  ta.value = prefill;
   const save = async (close) => {
     const text = ta.value.trim();
     if (!text) return ta.focus();
@@ -118,6 +127,10 @@ export function openSpeakSheet() {
       h('button', { class: 'btn', onclick: close }, 'Cancel'),
       h('button', { class: 'btn primary', onclick: () => save(close) }, 'Save'),
     ),
+    voiceEnabled() ? null : h('button', {
+      class: 'btn ghost small',
+      onclick: () => { close(); location.hash = '#/settings/ai'; },
+    }, icon('sparkle'), 'Want to just talk to it? Set up voice conversations'),
   ));
   ta.focus();
 }

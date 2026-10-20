@@ -7,6 +7,12 @@ A phone web app for logging expenses: snap a receipt, upload a photo or PDF, or 
 - **Costs nothing to host.** Each user enters their own Anthropic API key during setup and pays Anthropic directly (about 2–3¢ per receipt on the default model, under 0.1¢ on the cheapest).
 - **Nothing is hard-coded to one person.** Categories, payment methods, books (separate businesses or personal), destination, export layout, date format, currency and extra AI instructions are chosen in setup and editable in Settings.
 
+## How entries are read
+
+- **Receipts (photo or PDF):** the image itself goes to Claude, which reads it the way a person would (no separate text-recognition step). It handles crumpled or faded receipts and handwritten tips, cleans up vendor names, picks a category from the user's list, and flags anything it's unsure of for review.
+- **Voice, without setup:** the user types or uses the iPhone keyboard's dictation mic; Claude interprets the text, rambling and self-corrections included.
+- **Voice conversations (optional, Settings → AI):** with an OpenAI API key, "Talk to It" listens hands-free, stops when the user pauses, transcribes with OpenAI `gpt-transcribe` (Claude doesn't take audio), and Claude either logs the expense or asks one short follow-up out loud (at most two). Offline, the recording is saved and processed later. If the microphone fails, the app retries quietly once, then explains the problem and offers Try again / Use the keyboard instead; it never switches modes on its own.
+
 ## Where expenses can go
 
 | Destination | How it works |
@@ -68,5 +74,6 @@ Then open http://localhost:8000 in Chrome or Edge with the device toolbar for a 
 | `js/tabular.js` | Reading a layout from CSV, Excel or pasted text |
 | `js/sheets.js` | Google Sheets sync and the Apps Script |
 | `js/capture.js`, `js/image.js` | Camera, upload, voice/typed input, photo shrinking |
+| `js/speech.js`, `js/talk.js` | Voice conversations: recording with pause detection, transcription, spoken replies, the conversation screen |
 | `js/views/` | Screens: home, entry, export, settings, setup, Google Sheets, Excel, export formats |
 | `vendor/` | Official Anthropic TypeScript SDK 0.131.0 (browser bundle from jsDelivr), kept local so the app has no outside dependencies |

@@ -121,7 +121,8 @@ function recordedLine(createdAt) {
 
 async function buildContent(entry, file) {
   const content = [];
-  if (file) {
+  // Voice recordings are transcribed first (Claude reads the text, not the audio).
+  if (file && !file.type.startsWith('audio/')) {
     const data = await blobToBase64(file);
     if (file.type === 'application/pdf') {
       content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } });
@@ -132,7 +133,7 @@ async function buildContent(entry, file) {
   let text = recordedLine(entry.createdAt);
   if (entry.inputText) text += `\nThe user said: "${entry.inputText}"`;
   if (entry.userNote) text += `\nThe user's note about this receipt: "${entry.userNote}"`;
-  if (file && !entry.inputText) text += '\nExtract the expense from this receipt.';
+  if (file && !file.type.startsWith('audio/') && !entry.inputText) text += '\nExtract the expense from this receipt.';
   content.push({ type: 'text', text });
   return content;
 }
@@ -193,13 +194,41 @@ export async function suggestColumnMapping(headers, samples = []) {
   }
 }
 
-async function structuredCall({ system, content, schema }) {
+const TALK_RULES = `
+
+You are also talking with the user out loud, by voice, to log what they bought. After each thing they say:
+- If you know the amount and roughly what was bought, set done to true and put a short spoken confirmation in "say" (under 15 words, e.g. "Got it, two shovels for $22.49. Saved."). Always mention the amount.
+- Otherwise set done to false and ask ONE short, friendly question in "say" for the most important missing detail: the amount first, then what it was, then where they bought it. Don't ask about the date, category or payment method.
+- Never ask more than two questions in the whole conversation. If they don't know or want to skip, log what you have and set done to true.
+- If they say to cancel or that it was a mistake, set done to true, is_expense to false, and say "Okay, nothing saved."
+- "say" is read aloud: plain conversational words, no lists or symbols other than $ amounts.
+- Always fill in the expense records from everything said so far.`;
+
+// One turn of a spoken conversation. turns: [{ role: 'user'|'assistant', text }], starting with the user.
+// Returns the usual extraction plus { done, say }.
+export async function talkTurn(turns, createdAt) {
+  const s = settings();
+  if (!s.ai.apiKey) throw new AIError('Add your AI key in Settings to log expenses.', 'auth');
+  const base = buildSchema(s.categories);
+  const schema = {
+    ...base,
+    required: ['done', 'say', ...base.required],
+    properties: { done: { type: 'boolean' }, say: { type: 'string' }, ...base.properties },
+  };
+  const messages = turns.map((t, i) => ({
+    role: t.role,
+    content: i === 0 ? `${recordedLine(createdAt)}\nThe user said: "${t.text}"` : t.role === 'user' ? `The user said: "${t.text}"` : t.text,
+  }));
+  return structuredCall({ system: buildSystemPrompt(s) + TALK_RULES, messages, schema });
+}
+
+async function structuredCall({ system, content, messages, schema }) {
   const s = settings();
   const params = {
     model: s.ai.model,
     max_tokens: 16000,
     system,
-    messages: [{ role: 'user', content }],
+    messages: messages || [{ role: 'user', content }],
     output_config: { effort: 'low', format: { type: 'json_schema', schema } },
   };
 

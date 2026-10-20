@@ -425,6 +425,47 @@ button.list-item:active { background: var(--surface-2); }
 .viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .viewer .icon-btn { position: fixed; top: calc(var(--safe-top) + 10px); right: 12px; color: #fff; background: rgb(255 255 255 / 15%); }
 
+/* ---------- Voice conversation ---------- */
+
+.talk {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding: calc(var(--safe-top) + 8px) 16px calc(var(--safe-bottom) + 20px);
+  animation: fade .18s ease-out;
+}
+.talk-top { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+.talk-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px 0; max-width: 560px; width: 100%; margin: 0 auto; }
+.bubble { max-width: 85%; padding: 10px 14px; border-radius: 18px; font-size: 16px; line-height: 1.4; }
+.bubble.user { align-self: flex-end; background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 6px; }
+.bubble.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 6px; }
+.talk-center { display: flex; flex-direction: column; align-items: center; gap: 44px; padding: 40px 0 24px; }
+.talk-orb {
+  --level: 0;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--on-accent);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent) 70%, white), var(--accent));
+  box-shadow: 0 0 0 calc(8px + var(--level) * 26px) color-mix(in srgb, var(--accent) 22%, transparent);
+  transform: scale(calc(1 + var(--level) * 0.12));
+  transition: box-shadow .08s linear, transform .08s linear;
+}
+.talk-orb svg { width: 44px; height: 44px; }
+.talk[data-phase="thinking"] .talk-orb { animation: breathe 1.2s ease-in-out infinite; }
+.talk[data-phase="speaking"] .talk-orb { animation: breathe .9s ease-in-out infinite; }
+.talk[data-phase="error"] .talk-orb { background: var(--surface-2); color: var(--muted); box-shadow: none; }
+.talk[data-phase="done"] .talk-orb { animation: none; }
+@keyframes breathe { 50% { transform: scale(1.06); opacity: .85; } }
+.talk-status { min-height: 24px; text-align: center; color: var(--muted); font-size: 16px; max-width: 420px; }
+.talk[data-phase="error"] .talk-status { color: var(--text); }
+.talk-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 560px; width: 100%; margin: 0 auto; }
+
 /* ---------- Setup ---------- */
 
 .setup { display: flex; flex-direction: column; min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 40px); }

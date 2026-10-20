@@ -1,6 +1,6 @@
 import { MODELS } from '../ai.js';
 import { getFile } from '../db.js';
-import { getEntry, removeEntry, requeue, updateEntry } from '../entries.js';
+import { getEntry, hasReceipt, removeEntry, requeue, updateEntry } from '../entries.js';
 import { deliverFiles, receiptFiles } from '../exporter.js';
 import { kick, queueState } from '../queue.js';
 import { CURRENCIES, businessName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
@@ -126,6 +126,11 @@ export function EntryView({ params, query }) {
       if (!blob) return h('div', { class: 'card pad muted small' }, 'Receipt file is missing.');
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       objectUrl = URL.createObjectURL(blob);
+      if (blob.type.startsWith('audio/')) {
+        return h('div', { class: 'stack' },
+          h('div', { class: 'card pad stack' }, h('b', null, 'Voice recording'), h('audio', { controls: true, src: objectUrl, preload: 'metadata', style: { width: '100%' } })),
+          e.inputText ? h('div', { class: 'quote' }, e.inputText) : null);
+      }
       if (blob.type === 'application/pdf') {
         return h('div', { class: 'card pad row' }, h('div', { class: 'thumb' }, icon('file')), h('div', { class: 'grow' }, h('b', null, 'Receipt PDF')),
           h('a', { class: 'btn small', href: objectUrl, target: '_blank', rel: 'noopener' }, 'Open'));
@@ -264,7 +269,7 @@ export function EntryView({ params, query }) {
   async function moreMenu() {
     const options = [];
     if (entry.fileId || entry.inputText) options.push({ label: 'Read again with AI', value: 'reread', icon: 'sparkle', hint: 'Replaces the details with a fresh reading' });
-    if (entry.fileId) options.push({ label: 'Share receipt', value: 'share', icon: 'share' });
+    if (hasReceipt(entry)) options.push({ label: 'Share receipt', value: 'share', icon: 'share' });
     options.push({ label: 'Delete expense', value: 'delete', icon: 'trash', danger: true });
     const pick = await choiceSheet({ title: 'Expense options', options });
     if (pick === 'reread') {

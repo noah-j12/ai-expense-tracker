@@ -7,6 +7,7 @@ import { getFile, getAllEntries, putEntry } from './db.js';
 import { applyAIResult, getEntry, markAIError, updateEntry } from './entries.js';
 import { settings } from './settings.js';
 import { syncSheets } from './sheets.js';
+import { transcribeWithRetry } from './speech.js';
 import { emit } from './util.js';
 
 // blocked: a problem the user must fix (bad key, no credit). offline: last attempt had no connection.
@@ -65,13 +66,28 @@ async function processAI() {
     if (!entry) continue;
 
     try {
-      const file = entry.fileId ? await getFile(entry.fileId) : null;
+      let file = entry.fileId ? await getFile(entry.fileId) : null;
+      // A voice recording saved while offline: turn it into text first.
+      if (file?.type.startsWith('audio/')) {
+        if (entry.audioPending) {
+          // A voice-key problem only affects voice recordings, so don't hold up receipts over it.
+          const text = await transcribeWithRetry(file).catch((err) => {
+            throw err.kind === 'auth' ? new AIError(`${err.message} Then tap Try again.`, 'fatal') : err;
+          });
+          if (!text && !entry.inputText) throw new AIError('No speech was heard in this recording.', 'fatal');
+          // Anything said earlier in the conversation is already text; the recording is the last part.
+          const full = [entry.inputText, text].filter(Boolean).join('\n');
+          await updateEntry(id, (e) => { e.inputText = full; e.audioPending = false; }, { syncSheet: false });
+          entry.inputText = full;
+        }
+        file = null;
+      }
       const result = await extractExpenses(entry, file);
       await applyAIResult(id, result);
       queueState.offline = false;
       queueState.blocked = '';
     } catch (err) {
-      const e = err instanceof AIError ? err : new AIError(err?.message || 'Something went wrong.', 'retry');
+      const e = err instanceof AIError ? err : new AIError(err?.message || 'Something went wrong.', err?.kind || 'retry');
       if (e.kind === 'fatal') {
         await markAIError(id, e.message);
         continue;

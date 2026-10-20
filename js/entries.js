@@ -28,7 +28,12 @@ function requestPersistence() {
   navigator.storage?.persist?.().catch(() => {});
 }
 
-export async function createEntry({ source, file = null, thumb = null, inputText = '', userNote = '', fields = null }) {
+// A receipt photo/PDF (voice recordings are stored as files too, but aren't receipts).
+export const hasReceipt = (e) => Boolean(e.fileId) && !String(e.fileType || '').startsWith('audio/');
+
+// status 'processing' is for entries the caller is about to fill in itself (e.g. a finished voice conversation).
+// audioPending: `file` is a voice recording still to be transcribed and added to inputText.
+export async function createEntry({ source, file = null, thumb = null, inputText = '', userNote = '', fields = null, status = 'queued', audioPending = false }) {
   const s = settings();
   const now = Date.now();
   let fileId = null;
@@ -46,8 +51,9 @@ export async function createEntry({ source, file = null, thumb = null, inputText
     thumb,
     inputText,
     userNote,
+    audioPending,
     businessId: s.activeBusinessId,
-    aiStatus: fields ? 'skipped' : 'queued', // queued | processing | done | error | skipped
+    aiStatus: fields ? 'skipped' : status, // queued | processing | done | error | skipped
     aiError: '',
     aiModel: '',
     fields: { ...blankFields(now), ...(fields || {}) },
@@ -220,7 +226,8 @@ export function needsAttention(e) {
 export function displayTitle(e) {
   if (e.fields.vendor) return e.fields.vendor;
   if (e.aiStatus === 'queued' || e.aiStatus === 'processing') {
-    return e.source === 'voice' ? `“${e.inputText.slice(0, 40)}${e.inputText.length > 40 ? '…' : ''}”` : 'New receipt';
+    if (e.source === 'voice') return e.inputText ? `“${e.inputText.slice(0, 40)}${e.inputText.length > 40 ? '…' : ''}”` : 'Voice recording';
+    return 'New receipt';
   }
   return e.fields.description || 'Expense';
 }

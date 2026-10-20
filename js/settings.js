@@ -102,6 +102,8 @@ function defaults() {
     exportFileType: 'xlsx', // for the spreadsheet and custom formats: 'xlsx' or 'csv'
     exportTemplates: [], // custom layouts: { id, name, columns: [{ header, field }] }
     ai: { apiKey: '', model: 'claude-opus-5-5', instructions: '' },
+    // Optional voice conversations: OpenAI does the speech-to-text (Claude doesn't take audio).
+    voice: { openaiKey: '', talkBack: true, pause: 'normal' },
     // Google Sheets: the tab and its columns ({ header, field }) once set up.
     sheets: { url: '', secret: '', connectedName: '', tab: '', columns: [] },
     // Excel: the workbook tab and columns used by "Update my Excel file".
@@ -116,7 +118,7 @@ export async function loadSettings() {
   const saved = await kvGet('settings');
   const base = defaults();
   current = saved
-    ? { ...base, ...saved, ai: { ...base.ai, ...saved.ai }, sheets: { ...base.sheets, ...saved.sheets }, excel: { ...base.excel, ...saved.excel } }
+    ? { ...base, ...saved, ai: { ...base.ai, ...saved.ai }, sheets: { ...base.sheets, ...saved.sheets }, excel: { ...base.excel, ...saved.excel }, voice: { ...base.voice, ...saved.voice } }
     : base;
   if (!current.businesses.length) current.businesses = base.businesses;
   if (!current.businesses.some((b) => b.id === current.activeBusinessId)) current.activeBusinessId = current.businesses[0].id;

@@ -2,6 +2,7 @@
 // receipt photo bundles and full backups, and hands them to the iPhone share sheet.
 
 import { getAllEntries, getFile, putEntry, putFile, clearEverything } from './db.js';
+import { hasReceipt } from './entries.js';
 import { ID_HEADER, fieldValue, formatExportDate } from './fields.js';
 import { hasMultipleBusinesses, settings, replaceSettings } from './settings.js';
 import { base64ToBlob, blobToBase64, safeFileName } from './util.js';
@@ -134,7 +135,7 @@ export async function receiptFiles(entries) {
   const seen = new Set();
   const files = [];
   for (const e of entries) {
-    if (!e.fileId || seen.has(e.fileId)) continue;
+    if (!hasReceipt(e) || seen.has(e.fileId)) continue;
     seen.add(e.fileId);
     const blob = await getFile(e.fileId);
     if (!blob) continue;
