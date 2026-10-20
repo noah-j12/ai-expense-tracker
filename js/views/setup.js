@@ -1,0 +1,242 @@
+// First-run setup. Each step asks one thing, has a sensible default, and can be changed later in Settings.
+
+import { MODELS, testApiKey } from '../ai.js';
+import { restoreBackup } from '../exporter.js';
+import { kick } from '../queue.js';
+import { CATEGORY_PRESETS, DEFAULT_PAYMENT_METHODS, EXPORT_FORMATS, replaceSettings, settings } from '../settings.js';
+import { choiceList, field, tagEditor, toast } from '../ui.js';
+import { h, icon, isIOS, isStandalone, shareGlyph, uid } from '../util.js';
+
+export const CONSOLE_URL = 'https://console.anthropic.com/';
+
+export function apiKeySteps() {
+  return h('ol', { class: 'steps' },
+    h('li', null, h('div', null, 'Go to ', h('a', { href: CONSOLE_URL, target: '_blank', rel: 'noopener' }, 'console.anthropic.com'), ' and create a free account.')),
+    h('li', null, h('div', null, 'Under ', h('b', null, 'Billing'), ', add a card and buy a small amount of credit ($5 lasts a long time). Setting a monthly spend limit there is a good idea.')),
+    h('li', null, h('div', null, 'Under ', h('b', null, 'API Keys'), ', create a key and copy it.')),
+    h('li', null, h('div', null, 'Paste it below.')),
+  );
+}
+
+export function apiKeyInput(value) {
+  const input = h('input', { class: 'input', type: 'password', value, placeholder: 'sk-ant-…', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+  const toggle = h('button', { class: 'btn', type: 'button', onclick: () => { input.type = input.type === 'password' ? 'text' : 'password'; toggle.textContent = input.type === 'password' ? 'Show' : 'Hide'; } }, 'Show');
+  return { input, row: h('div', { class: 'input-group' }, input, toggle) };
+}
+
+export function SetupView() {
+  const draft = structuredClone(settings());
+  const el = h('div', { class: 'page' });
+  let step = 0;
+
+  const steps = [welcome, business, categories, payments, accounting, ai, finish];
+
+  function frame({ title, lead, content, next = 'Continue', onNext, skip, hideBack }) {
+    const nextBtn = h('button', { class: 'btn primary', onclick: async () => {
+      nextBtn.disabled = true;
+      try {
+        if (onNext && (await onNext()) === false) return;
+        go(step + 1);
+      } finally {
+        nextBtn.disabled = false;
+      }
+    } }, next);
+    return h('div', { class: 'setup' },
+      step > 0 ? h('div', { class: 'progress' }, steps.slice(1).map((_, i) => h('i', { class: i < step ? 'on' : '' }))) : null,
+      h('h2', null, title),
+      lead ? h('p', { class: 'lead' }, lead) : null,
+      h('div', { class: 'content' }, content),
+      h('div', { class: 'footer' },
+        step > 0 && !hideBack ? h('button', { class: 'btn', onclick: () => go(step - 1) }, 'Back') : null,
+        skip ? h('button', { class: 'btn ghost', onclick: () => go(step + 1) }, skip) : null,
+        nextBtn,
+      ),
+    );
+  }
+
+  function go(n) {
+    step = Math.max(0, Math.min(steps.length - 1, n));
+    el.replaceChildren(steps[step]());
+    window.scrollTo(0, 0);
+  }
+
+  function welcome() {
+    const restoreInput = h('input', { type: 'file', accept: 'application/json,.json', hidden: true });
+    restoreInput.addEventListener('change', async () => {
+      const file = restoreInput.files?.[0];
+      if (!file) return;
+      try {
+        const count = await restoreBackup(file);
+        toast(`Restored ${count} expenses`);
+        location.hash = '#/';
+      } catch (err) {
+        toast(err.message, { error: true });
+      }
+    });
+    return h('div', { class: 'setup' },
+      h('img', { class: 'hero-icon', src: 'icons/icon-192.png', alt: '' }),
+      h('h2', null, 'Expenses, handled.'),
+      h('p', { class: 'lead' }, 'Snap a receipt or just say what you spent. AI fills in the vendor, amount, date and category, and keeps it all ready for your books.'),
+      h('div', { class: 'content' },
+        h('div', { class: 'list' },
+          h('div', { class: 'list-item' }, icon('camera'), h('div', null, h('b', null, 'Scan or speak'), h('div', { class: 'small muted' }, 'One tap, then get on with your day.'))),
+          h('div', { class: 'list-item' }, icon('cloudOff'), h('div', null, h('b', null, 'Works offline'), h('div', { class: 'small muted' }, 'Entries wait safely until you have signal.'))),
+          h('div', { class: 'list-item' }, icon('sheet'), h('div', null, h('b', null, 'Ready for your accountant'), h('div', { class: 'small muted' }, 'Export to QuickBooks, Xero, Wave or a spreadsheet.'))),
+        ),
+        h('p', { class: 'small muted' }, 'Setup takes about two minutes. You can change anything later.'),
+      ),
+      h('div', { class: 'footer', style: { flexDirection: 'column' } },
+        h('button', { class: 'btn primary block', onclick: () => go(1) }, 'Get started'),
+        h('button', { class: 'btn ghost block', onclick: () => restoreInput.click() }, 'Restore from a backup'),
+        restoreInput,
+      ),
+    );
+  }
+
+  function business() {
+    const name = h('input', { class: 'input', value: draft.ownerName, placeholder: 'e.g. Chris', autocapitalize: 'words', autocomplete: 'given-name' });
+    name.addEventListener('input', () => { draft.ownerName = name.value.trim(); });
+    const list = h('div', { class: 'stack' });
+    const renderList = () => {
+      list.replaceChildren(...draft.businesses.map((b, i) => {
+        const input = h('input', { class: 'input', value: b.name === 'My Business' ? '' : b.name, placeholder: i === 0 ? 'e.g. Todd Construction LLC' : 'Another business', autocapitalize: 'words' });
+        input.addEventListener('input', () => { b.name = input.value.trim(); });
+        return draft.businesses.length > 1
+          ? h('div', { class: 'input-group' }, input, h('button', { class: 'icon-btn', 'aria-label': 'Remove', onclick: () => { draft.businesses.splice(i, 1); renderList(); } }, icon('x')))
+          : input;
+      }));
+    };
+    renderList();
+    return frame({
+      title: 'About you',
+      lead: 'This keeps your records labeled correctly.',
+      content: [
+        field('Your first name (optional)', name),
+        h('div', { class: 'field' }, h('div', { class: 'label' }, draft.businesses.length > 1 ? 'Businesses' : 'Business name'), list,
+          h('div', { class: 'hint' }, 'Have more than one business? Add each one, then pick which one you\'re logging to.')),
+        h('button', { class: 'btn', onclick: () => { draft.businesses.push({ id: uid(), name: '' }); renderList(); list.lastChild?.querySelector?.('input')?.focus(); } }, icon('plus'), 'Add another business'),
+      ],
+      onNext: () => {
+        draft.businesses = draft.businesses.filter((b, i) => b.name || i === 0);
+        draft.businesses.forEach((b, i) => { if (!b.name) b.name = i === 0 ? 'My Business' : `Business ${i + 1}`; });
+        if (!draft.businesses.some((b) => b.id === draft.activeBusinessId)) draft.activeBusinessId = draft.businesses[0].id;
+      },
+    });
+  }
+
+  function categories() {
+    const editor = tagEditor({ items: draft.categories, placeholder: 'Add a category', onChange: (items) => { draft.categories = items; } });
+    const presets = choiceList({
+      options: CATEGORY_PRESETS,
+      value: draft.categoryPreset,
+      onChange: (id) => {
+        draft.categoryPreset = id;
+        draft.categories = [...CATEGORY_PRESETS.find((p) => p.id === id).categories];
+        editor.setItems(draft.categories);
+      },
+    });
+    return frame({
+      title: 'Expense categories',
+      lead: 'Pick a starting list. The AI sorts each expense into one of these. If your accountant uses specific categories, use theirs.',
+      content: [presets, h('div', { class: 'section-title', style: { margin: '8px 4px 0' } }, 'Your categories, tap × to remove'), editor],
+    });
+  }
+
+  function payments() {
+    const editor = tagEditor({ items: draft.paymentMethods, placeholder: 'e.g. Amex ending 1004', onChange: (items) => { draft.paymentMethods = items; } });
+    return frame({
+      title: 'How do you pay?',
+      lead: 'The AI matches the receipt to one of these. Adding the last 4 digits of each card makes the match more accurate.',
+      content: [editor, h('button', { class: 'btn ghost', onclick: () => { draft.paymentMethods = [...DEFAULT_PAYMENT_METHODS]; editor.setItems(draft.paymentMethods); } }, 'Reset to defaults')],
+    });
+  }
+
+  function accounting() {
+    return frame({
+      title: 'Where do your books live?',
+      lead: 'This sets up the export file. You can always export a different format.',
+      content: choiceList({
+        options: [...EXPORT_FORMATS, { id: 'unsure', name: 'Not sure yet', hint: 'Start with a standard spreadsheet' }],
+        value: draft.exportFormat,
+        onChange: (id) => { draft.exportFormat = id === 'unsure' ? 'csv' : id; },
+      }),
+    });
+  }
+
+  function ai() {
+    const { input, row } = apiKeyInput(draft.ai.apiKey);
+    const status = h('div', { class: 'small' });
+    const models = choiceList({
+      options: MODELS.map((m) => ({ id: m.id, name: m.name, hint: m.detail })),
+      value: draft.ai.model,
+      onChange: (id) => { draft.ai.model = id; },
+    });
+    return frame({
+      title: 'Connect the AI',
+      lead: 'The app uses Claude, an AI from Anthropic, to read receipts. You pay Anthropic directly for what you use, usually a few cents a receipt. There\'s no subscription and no markup.',
+      content: [
+        apiKeySteps(),
+        field('Your API key', row),
+        status,
+        h('details', null, h('summary', { class: 'small', style: { fontWeight: 600, color: 'var(--muted)', marginBottom: '10px' } }, 'Accuracy vs. cost'), models),
+        h('p', { class: 'tiny muted' }, 'Your key is stored only on this phone and is sent only to Anthropic.'),
+      ],
+      next: 'Continue',
+      skip: 'Skip for now',
+      onNext: async () => {
+        const key = input.value.trim();
+        // Only keep a key once it has been checked, so a mistyped key + "Skip" doesn't stick.
+        if (!key) {
+          status.replaceChildren(h('span', { class: 'muted' }, 'Paste a key, or tap "Skip for now". Entries will wait until a key is added.'));
+          return false;
+        }
+        status.replaceChildren(h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Checking your key…'));
+        const res = await testApiKey(key, draft.ai.model);
+        if (!res.ok) {
+          status.replaceChildren(h('span', { style: { color: 'var(--danger)' } }, res.message));
+          return false;
+        }
+        draft.ai.apiKey = key;
+        return true;
+      },
+    });
+  }
+
+  function finish() {
+    const installHelp = isIOS() && !isStandalone()
+      ? h('div', { class: 'card pad stack' },
+        h('b', null, 'One last thing: put it on your Home Screen'),
+        h('ol', { class: 'steps' },
+          h('li', null, h('div', null, 'Tap ', shareGlyph(), ' at the bottom of Safari.')),
+          h('li', null, h('div', null, 'Scroll down and tap ', h('b', null, 'Add to Home Screen'), '.')),
+          h('li', null, h('div', null, 'Open it from the new icon. It works offline from there.'))))
+      : null;
+    return frame({
+      title: 'You\'re all set',
+      lead: draft.ai.apiKey
+        ? 'Tap Scan Receipt any time you buy something. That\'s it.'
+        : 'You can start scanning now. Add your AI key in Settings and everything you\'ve saved will be read.',
+      content: [
+        installHelp,
+        h('div', { class: 'list' },
+          h('div', { class: 'list-item' }, icon('building'), h('div', { class: 'grow' }, draft.businesses.map((b) => b.name).join(', '))),
+          h('div', { class: 'list-item' }, icon('tag'), h('div', { class: 'grow' }, `${draft.categories.length} categories`)),
+          h('div', { class: 'list-item' }, icon('share'), h('div', { class: 'grow' }, `Exports for ${EXPORT_FORMATS.find((f) => f.id === draft.exportFormat)?.name}`)),
+          h('div', { class: 'list-item' }, icon('key'), h('div', { class: 'grow' }, draft.ai.apiKey ? 'AI connected' : 'AI not connected yet')),
+        ),
+        h('p', { class: 'small muted' }, 'Want entries to land in a Google Sheet automatically too? Set that up anytime in Settings → Google Sheets.'),
+      ],
+      next: 'Start using the app',
+      onNext: async () => {
+        draft.setupDone = true;
+        await replaceSettings(draft);
+        kick();
+        location.hash = '#/';
+        return false;
+      },
+    });
+  }
+
+  go(0);
+  return { el };
+}

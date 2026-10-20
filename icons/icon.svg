@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14a083"/>
+      <stop offset="1" stop-color="#0a5a48"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g id="art">
+    <path d="M156 132a26 26 0 0 1 26-26h148a26 26 0 0 1 26 26v276l-25-18-25 18-25-18-25 18-25-18-25 18-25-18-25 18z" fill="#ffffff"/>
+    <rect x="186" y="156" width="104" height="16" rx="8" fill="#0d7a61" opacity=".85"/>
+    <rect x="186" y="196" width="140" height="12" rx="6" fill="#0d7a61" opacity=".35"/>
+    <rect x="186" y="226" width="118" height="12" rx="6" fill="#0d7a61" opacity=".35"/>
+    <rect x="186" y="256" width="132" height="12" rx="6" fill="#0d7a61" opacity=".35"/>
+    <rect x="186" y="304" width="58" height="18" rx="9" fill="#0d7a61" opacity=".85"/>
+    <rect x="268" y="304" width="58" height="18" rx="9" fill="#0d7a61" opacity=".85"/>
+    <path d="M378 70Q378 132 440 132Q378 132 378 194Q378 132 316 132Q378 132 378 70Z" fill="#ffd166"/>
+    <path d="M432 196Q432 222 458 222Q432 222 432 248Q432 222 406 222Q432 222 432 196Z" fill="#ffd166"/>
+  </g>
+</svg>
