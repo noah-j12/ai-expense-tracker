@@ -11,7 +11,7 @@ const ROUTES = [
   [/^\/$/, HomeView],
   [/^\/entry\/([^/]+)$/, EntryView],
   [/^\/export$/, ExportView],
-  [/^\/settings(?:\/(\w+))?$/, SettingsView],
+  [/^\/settings(?:\/(\w+)(?:\/([\w-]+))?)?$/, SettingsView],
   [/^\/setup$/, SetupView],
 ];
 

@@ -5,7 +5,7 @@ import { restoreBackup } from '../exporter.js';
 import { kick } from '../queue.js';
 import { CATEGORY_PRESETS, DEFAULT_PAYMENT_METHODS, EXPORT_FORMATS, replaceSettings, settings } from '../settings.js';
 import { choiceList, field, tagEditor, toast } from '../ui.js';
-import { h, icon, isIOS, isStandalone, shareGlyph, uid } from '../util.js';
+import { h, icon, isIOS, isStandalone, shareGlyph } from '../util.js';
 
 export const CONSOLE_URL = 'https://console.anthropic.com/';
 
@@ -28,8 +28,10 @@ export function SetupView() {
   const draft = structuredClone(settings());
   const el = h('div', { class: 'page' });
   let step = 0;
+  // Where expenses end up: 'excel' | 'sheets' | an export format id | 'later'.
+  let destination = 'later';
 
-  const steps = [welcome, business, categories, payments, accounting, ai, finish];
+  const steps = [welcome, categories, payments, books, ai, finish];
 
   function frame({ title, lead, content, next = 'Continue', onNext, skip, hideBack }) {
     const nextBtn = h('button', { class: 'btn primary', onclick: async () => {
@@ -81,7 +83,7 @@ export function SetupView() {
         h('div', { class: 'list' },
           h('div', { class: 'list-item' }, icon('camera'), h('div', null, h('b', null, 'Scan or speak'), h('div', { class: 'small muted' }, 'One tap, then get on with your day.'))),
           h('div', { class: 'list-item' }, icon('cloudOff'), h('div', null, h('b', null, 'Works offline'), h('div', { class: 'small muted' }, 'Entries wait safely until you have signal.'))),
-          h('div', { class: 'list-item' }, icon('sheet'), h('div', null, h('b', null, 'Ready for your accountant'), h('div', { class: 'small muted' }, 'Export to QuickBooks, Xero, Wave or a spreadsheet.'))),
+          h('div', { class: 'list-item' }, icon('sheet'), h('div', null, h('b', null, 'Ready for your accountant'), h('div', { class: 'small muted' }, 'Works with Excel, Google Sheets, QuickBooks, Xero and Wave.'))),
         ),
         h('p', { class: 'small muted' }, 'Setup takes about two minutes. You can change anything later.'),
       ),
@@ -91,37 +93,6 @@ export function SetupView() {
         restoreInput,
       ),
     );
-  }
-
-  function business() {
-    const name = h('input', { class: 'input', value: draft.ownerName, placeholder: 'e.g. Sam', autocapitalize: 'words', autocomplete: 'given-name' });
-    name.addEventListener('input', () => { draft.ownerName = name.value.trim(); });
-    const list = h('div', { class: 'stack' });
-    const renderList = () => {
-      list.replaceChildren(...draft.businesses.map((b, i) => {
-        const input = h('input', { class: 'input', value: b.name === 'My Business' ? '' : b.name, placeholder: i === 0 ? 'e.g. Riverside Services LLC' : 'Another business', autocapitalize: 'words' });
-        input.addEventListener('input', () => { b.name = input.value.trim(); });
-        return draft.businesses.length > 1
-          ? h('div', { class: 'input-group' }, input, h('button', { class: 'icon-btn', 'aria-label': 'Remove', onclick: () => { draft.businesses.splice(i, 1); renderList(); } }, icon('x')))
-          : input;
-      }));
-    };
-    renderList();
-    return frame({
-      title: 'About you',
-      lead: 'This keeps your records labeled correctly.',
-      content: [
-        field('Your first name (optional)', name),
-        h('div', { class: 'field' }, h('div', { class: 'label' }, draft.businesses.length > 1 ? 'Businesses' : 'Business name'), list,
-          h('div', { class: 'hint' }, 'Have more than one business? Add each one, then pick which one you\'re logging to.')),
-        h('button', { class: 'btn', onclick: () => { draft.businesses.push({ id: uid(), name: '' }); renderList(); list.lastChild?.querySelector?.('input')?.focus(); } }, icon('plus'), 'Add another business'),
-      ],
-      onNext: () => {
-        draft.businesses = draft.businesses.filter((b, i) => b.name || i === 0);
-        draft.businesses.forEach((b, i) => { if (!b.name) b.name = i === 0 ? 'My Business' : `Business ${i + 1}`; });
-        if (!draft.businesses.some((b) => b.id === draft.activeBusinessId)) draft.activeBusinessId = draft.businesses[0].id;
-      },
-    });
   }
 
   function categories() {
@@ -151,14 +122,24 @@ export function SetupView() {
     });
   }
 
-  function accounting() {
+  function books() {
+    const options = [
+      { id: 'excel', name: 'Excel', hint: 'Add to a workbook you already have, or start one' },
+      { id: 'sheets', name: 'Google Sheets', hint: 'Expenses appear in your sheet automatically' },
+      ...EXPORT_FORMATS.filter((f) => f.id !== 'csv').map((f) => ({ id: f.id, name: f.name, hint: 'Export a file to import' })),
+      { id: 'csv', name: 'My accountant / something else', hint: 'Export a spreadsheet whenever you need one' },
+      { id: 'later', name: 'Not sure yet', hint: 'Keep expenses on this phone and decide later' },
+    ];
     return frame({
-      title: 'Where do your books live?',
-      lead: 'This sets up the export file. You can always export a different format.',
+      title: 'Where do you keep your books?',
+      lead: 'Expenses are always saved on this phone. This is where they go from there. You can add or change it later.',
       content: choiceList({
-        options: [...EXPORT_FORMATS, { id: 'unsure', name: 'Not sure yet', hint: 'Start with a standard spreadsheet' }],
-        value: draft.exportFormat,
-        onChange: (id) => { draft.exportFormat = id === 'unsure' ? 'csv' : id; },
+        options,
+        value: destination,
+        onChange: (id) => {
+          destination = id;
+          draft.exportFormat = ['excel', 'sheets', 'later'].includes(id) ? 'csv' : id;
+        },
       }),
     });
   }
@@ -211,6 +192,12 @@ export function SetupView() {
           h('li', null, h('div', null, 'Scroll down and tap ', h('b', null, 'Add to Home Screen'), '.')),
           h('li', null, h('div', null, 'Open it from the new icon. It works offline from there.'))))
       : null;
+    const where = {
+      excel: 'Next: connect your Excel workbook',
+      sheets: 'Next: connect your Google Sheet',
+      later: 'Saved on this phone; export or connect a spreadsheet anytime',
+    }[destination] || `Exports for ${EXPORT_FORMATS.find((f) => f.id === destination)?.name}`;
+    const nextRoute = { excel: '#/settings/excel', sheets: '#/settings/sheets' }[destination] || '#/';
     return frame({
       title: 'You\'re all set',
       lead: draft.ai.apiKey
@@ -219,19 +206,18 @@ export function SetupView() {
       content: [
         installHelp,
         h('div', { class: 'list' },
-          h('div', { class: 'list-item' }, icon('building'), h('div', { class: 'grow' }, draft.businesses.map((b) => b.name).join(', '))),
           h('div', { class: 'list-item' }, icon('tag'), h('div', { class: 'grow' }, `${draft.categories.length} categories`)),
-          h('div', { class: 'list-item' }, icon('share'), h('div', { class: 'grow' }, `Exports for ${EXPORT_FORMATS.find((f) => f.id === draft.exportFormat)?.name}`)),
+          h('div', { class: 'list-item' }, icon('share'), h('div', { class: 'grow' }, where)),
           h('div', { class: 'list-item' }, icon('key'), h('div', { class: 'grow' }, draft.ai.apiKey ? 'AI connected' : 'AI not connected yet')),
         ),
-        h('p', { class: 'small muted' }, 'Want entries to land in a Google Sheet automatically too? Set that up anytime in Settings → Google Sheets.'),
+        h('p', { class: 'small muted' }, 'Running more than one business, or tracking personal spending separately? Add separate books in Settings → Books.'),
       ],
-      next: 'Start using the app',
+      next: nextRoute === '#/' ? 'Start using the app' : 'Continue',
       onNext: async () => {
         draft.setupDone = true;
         await replaceSettings(draft);
         kick();
-        location.hash = '#/';
+        location.hash = nextRoute;
         return false;
       },
     });

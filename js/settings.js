@@ -89,8 +89,9 @@ function defaults() {
   return {
     schema: 1,
     setupDone: false,
-    ownerName: '',
-    businesses: [{ id: businessId, name: 'My Business' }],
+    // "Books": separate sets of expenses (different businesses, or business vs. personal).
+    // One unnamed book by default; names and the switcher only appear once there are two.
+    businesses: [{ id: businessId, name: '' }],
     activeBusinessId: businessId,
     categoryPreset: 'small-business',
     categories: [...CATEGORY_PRESETS[0].categories],
@@ -98,8 +99,13 @@ function defaults() {
     currency: guessCurrency(),
     dateFormat: guessDateFormat(),
     exportFormat: 'csv',
+    exportFileType: 'xlsx', // for the spreadsheet and custom formats: 'xlsx' or 'csv'
+    exportTemplates: [], // custom layouts: { id, name, columns: [{ header, field }] }
     ai: { apiKey: '', model: 'claude-opus-5-5', instructions: '' },
-    sheets: { url: '', secret: '', connectedName: '' },
+    // Google Sheets: the tab and its columns ({ header, field }) once set up.
+    sheets: { url: '', secret: '', connectedName: '', tab: '', columns: [] },
+    // Excel: the workbook tab and columns used by "Update my Excel file".
+    excel: { fileName: '', tab: '', columns: [], lastUpdated: null },
     askNoteAfterScan: false,
   };
 }
@@ -110,7 +116,7 @@ export async function loadSettings() {
   const saved = await kvGet('settings');
   const base = defaults();
   current = saved
-    ? { ...base, ...saved, ai: { ...base.ai, ...saved.ai }, sheets: { ...base.sheets, ...saved.sheets } }
+    ? { ...base, ...saved, ai: { ...base.ai, ...saved.ai }, sheets: { ...base.sheets, ...saved.sheets }, excel: { ...base.excel, ...saved.excel } }
     : base;
   if (!current.businesses.length) current.businesses = base.businesses;
   if (!current.businesses.some((b) => b.id === current.activeBusinessId)) current.activeBusinessId = current.businesses[0].id;
@@ -139,7 +145,20 @@ export async function replaceSettings(next) {
 }
 
 export function businessName(id) {
-  return current.businesses.find((b) => b.id === id)?.name || 'Unknown business';
+  const book = current.businesses.find((b) => b.id === id);
+  return book ? book.name || 'Main books' : 'Unknown books';
+}
+
+// Built-in formats plus the user's own layouts (ids prefixed "tpl:").
+export function allExportFormats() {
+  return [
+    ...EXPORT_FORMATS,
+    ...current.exportTemplates.map((t) => ({ id: `tpl:${t.id}`, name: t.name, hint: `Your layout · ${t.columns.length} columns`, template: t })),
+  ];
+}
+
+export function exportFormatName(id) {
+  return allExportFormats().find((f) => f.id === id)?.name || 'Spreadsheet';
 }
 
 export function hasMultipleBusinesses() {

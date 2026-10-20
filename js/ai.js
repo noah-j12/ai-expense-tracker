@@ -2,6 +2,7 @@
 // The API key belongs to the person using the app and never leaves their phone except to go to Anthropic.
 
 import Anthropic from '../vendor/anthropic-sdk.mjs';
+import { FIELDS } from './fields.js';
 import { settings } from './settings.js';
 import { blobToBase64, toISODate } from './util.js';
 
@@ -137,16 +138,67 @@ async function buildContent(entry, file) {
 export async function extractExpenses(entry, file) {
   const s = settings();
   if (!s.ai.apiKey) throw new AIError('Add your AI key in Settings to read this entry.', 'auth');
+  return structuredCall({
+    system: buildSystemPrompt(s),
+    content: await buildContent(entry, file),
+    schema: buildSchema(s.categories),
+  });
+}
 
+// Suggests which expense detail belongs in each of someone's spreadsheet columns.
+// Returns an array of field keys ('' = leave blank) aligned with `headers`, or null if the AI isn't available.
+export async function suggestColumnMapping(headers, samples = []) {
+  if (!settings().ai.apiKey || !headers.length) return null;
+  const keys = FIELDS.map((f) => f.key);
+  const columns = headers.map((h, i) => {
+    const examples = samples.map((r) => r[i]).filter((v) => String(v ?? '').trim()).slice(0, 3).map((v) => JSON.stringify(String(v).slice(0, 40)));
+    return `${i}. ${JSON.stringify(h)}${examples.length ? ` (examples: ${examples.join(', ')})` : ''}`;
+  });
+  try {
+    const out = await structuredCall({
+      system: 'You match the columns of someone\'s expense spreadsheet to the details an expense-tracking app records. Match a column only when it clearly holds that detail; otherwise use "none". Use each detail for at most one column. Pick "totalNegative" when the amounts are written as negative numbers.',
+      content: [{
+        type: 'text',
+        text: `App details:\n${FIELDS.map((f) => `${f.key}: ${f.label}`).join('\n')}\n\nSpreadsheet columns:\n${columns.join('\n')}`,
+      }],
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['matches'],
+        properties: {
+          matches: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['column', 'field'],
+              properties: { column: { type: 'integer' }, field: { type: 'string', enum: [...keys, 'none'] } },
+            },
+          },
+        },
+      },
+    });
+    const result = headers.map(() => '');
+    const used = new Set();
+    for (const m of out.matches || []) {
+      if (m.field === 'none' || used.has(m.field) || m.column < 0 || m.column >= headers.length) continue;
+      result[m.column] = m.field;
+      used.add(m.field);
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+async function structuredCall({ system, content, schema }) {
+  const s = settings();
   const params = {
     model: s.ai.model,
     max_tokens: 16000,
-    system: buildSystemPrompt(s),
-    messages: [{ role: 'user', content: await buildContent(entry, file) }],
-    output_config: {
-      effort: 'low',
-      format: { type: 'json_schema', schema: buildSchema(s.categories) },
-    },
+    system,
+    messages: [{ role: 'user', content }],
+    output_config: { effort: 'low', format: { type: 'json_schema', schema } },
   };
 
   let response;

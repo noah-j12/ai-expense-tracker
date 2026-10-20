@@ -50,13 +50,12 @@ export function HomeView() {
   let shown = PAGE;
   let installDismissed = true;
 
-  const greeting = s.ownerName ? `Hi, ${s.ownerName.split(' ')[0]}` : 'AI Expense Tracker';
   const searchInput = h('input', { type: 'search', placeholder: 'Search expenses', enterkeyhint: 'search', autocomplete: 'off' });
   searchInput.addEventListener('input', () => { query = searchInput.value.trim().toLowerCase(); shown = PAGE; renderList(); });
 
   el.append(
     h('header', { class: 'topbar' },
-      h('h1', null, greeting),
+      h('h1', null, 'AI Expense Tracker'),
       h('button', { class: 'icon-btn', 'aria-label': 'Export', onclick: () => { location.hash = '#/export'; } }, icon('share')),
       h('button', { class: 'icon-btn', 'aria-label': 'Settings', onclick: () => { location.hash = '#/settings'; } }, icon('gear')),
     ),
@@ -112,7 +111,7 @@ export function HomeView() {
           onclick: async () => {
             const id = await choiceSheet({
               title: 'Log expenses to…',
-              options: cur.businesses.map((b) => ({ label: b.name, value: b.id, selected: b.id === cur.activeBusinessId, icon: 'building' })),
+              options: cur.businesses.map((b) => ({ label: businessName(b.id), value: b.id, selected: b.id === cur.activeBusinessId, icon: 'building' })),
             });
             if (id) await updateSettings({ activeBusinessId: id });
           },

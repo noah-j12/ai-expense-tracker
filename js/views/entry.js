@@ -3,7 +3,7 @@ import { getFile } from '../db.js';
 import { getEntry, removeEntry, requeue, updateEntry } from '../entries.js';
 import { deliverFiles, receiptFiles } from '../exporter.js';
 import { kick, queueState } from '../queue.js';
-import { CURRENCIES, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
+import { CURRENCIES, businessName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
 import { sheetsConnected } from '../sheets.js';
 import { choiceSheet, confirmSheet, field, imageViewer, promptSheet, toast, topbar } from '../ui.js';
 import { debounce, formatDateTime, formatMoney, fill, h, icon, on, round2 } from '../util.js';
@@ -177,7 +177,7 @@ export function EntryView({ params, query }) {
 
     let business = null;
     if (hasMultipleBusinesses()) {
-      business = h('select', { class: 'select' }, s.businesses.map((b) => h('option', { value: b.id, selected: b.id === entry.businessId }, b.name)));
+      business = h('select', { class: 'select' }, s.businesses.map((b) => h('option', { value: b.id, selected: b.id === entry.businessId }, businessName(b.id))));
       business.addEventListener('change', async () => {
         edited = true;
         await updateEntry(id, (e) => { e.businessId = business.value; });
@@ -193,7 +193,7 @@ export function EntryView({ params, query }) {
       h('div', { class: 'grid-2' }, field('Date', date), field('Category', category)),
       field('What was it for?', textInput('description', { placeholder: 'e.g. Lumber for deck job', autocapitalize: 'sentences' })),
       field('Paid with', payment),
-      business ? field('Business', business) : null,
+      business ? field('Books', business) : null,
       field('Notes', notes),
       h('details', { class: 'card pad' },
         h('summary', { class: 'small', style: { fontWeight: 600, color: 'var(--muted)' } }, 'Tax, tip & currency'),

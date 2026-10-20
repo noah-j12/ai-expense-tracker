@@ -1,31 +1,45 @@
 # AI Expense Tracker
 
-A phone web app for logging expenses: snap a receipt, upload a photo or PDF, or say/type what you spent. Claude reads it, fills in vendor, amount, date, category and payment method, and keeps everything ready to export to QuickBooks Online, Xero, Wave or a spreadsheet. It can also sync to a Google Sheet.
+A phone web app for logging expenses: snap a receipt, upload a photo or PDF, or say/type what you spent. Claude reads it and fills in vendor, amount, date, category and payment method. From there expenses go wherever the user keeps their books: an Excel workbook, a Google Sheet, QuickBooks Online, Xero, Wave, or a spreadsheet file for their accountant.
 
 - **No backend.** Plain HTML/CSS/JS served as static files. Data lives on the phone (IndexedDB).
 - **Works offline.** The app opens with no signal; new entries wait in a queue and are read when the app is next open with a connection. (iPhones don't let web apps upload while closed.)
 - **Costs nothing to host.** Each user enters their own Anthropic API key during setup and pays Anthropic directly (about 2–3¢ per receipt on the default model, under 0.1¢ on the cheapest).
-- **Nothing is hard-coded to one person.** Businesses, categories, payment methods, export format, date format, currency and extra AI instructions are all chosen in setup and editable in Settings.
+- **Nothing is hard-coded to one person.** Categories, payment methods, books (separate businesses or personal), destination, export layout, date format, currency and extra AI instructions are chosen in setup and editable in Settings.
+
+## Where expenses can go
+
+| Destination | How it works |
+|---|---|
+| **Google Sheets** | Live and automatic. The user pastes a small Apps Script (shown in the app) into their own sheet and deploys it as a web app. Works with a new tab or an existing one: the app reads the header row, matches columns (rules + AI), keeps existing rows and formatting, and adds a hidden "AI Expense Tracker ID" column automatically so edits and deletes update the right row. Receipt photos go to a Drive folder. |
+| **Excel** | The user picks their workbook from the Files app (OneDrive, iCloud Drive, or on the phone) and a tab. The app matches columns, adds new expenses below the existing rows (copying the formatting, filling formulas like running totals down, extending Excel Tables), updates expenses edited in the app, and hands the file back to save over the original. Same hidden ID column. A brand-new workbook can be started too. No Microsoft login: live Excel sync isn't practical for a backend-free app (Microsoft's workbook API doesn't support personal OneDrive, and browser sign-ins expire every 24 hours). |
+| **QuickBooks Online / Xero / Wave** | Export a CSV in each one's bank-import format (spending as negative amounts). |
+| **Spreadsheet / accountant** | Export a standard spreadsheet as Excel (.xlsx) or CSV. |
+| **Custom layout** | Settings → Export formats: upload a CSV/Excel file or paste column names, match columns once, and exports come out in exactly that layout. |
+
+Wherever the user's existing data has categories or payment methods (in a mapped column), the app offers to reuse those names.
 
 ## Put it online (GitHub Pages, free)
 
-1. On github.com, create a new repository (e.g. `ai-expense-tracker`). It can be private only on a paid plan; a public repo is fine since there are no secrets in the code.
-2. Click **uploading an existing file**, then drag in **everything inside this folder** (including the hidden `.nojekyll` file; in File Explorer turn on View → Show → Hidden items). Commit.
-3. Go to **Settings → Pages**. Under "Build and deployment", choose **Deploy from a branch**, branch `main`, folder `/ (root)`. Save.
-4. After a minute the site is live at `https://<your-username>.github.io/ai-expense-tracker/`.
+This repo is already set up: pushing to `main` deploys to GitHub Pages.
+
+To set up a copy from scratch:
+1. Create a public GitHub repository and push (or upload) **everything in this folder**, including the hidden `.nojekyll` file.
+2. **Settings → Pages**: Deploy from a branch, `main`, `/ (root)`.
+3. The site is live at `https://<username>.github.io/<repo>/` a minute later.
 
 ## Install on the iPhone
 
-1. Open the link in **Safari** (not Chrome).
-2. Tap the Share button → **Add to Home Screen** → Add.
-3. Open it from the new icon and go through setup. From then on it works offline.
+1. Open the link in **Safari**.
+2. Share → **Add to Home Screen** → Add.
+3. Open it from the icon and go through setup. From then on it works offline.
 
 ## Publishing an update
 
 1. Change the files.
-2. In `sw.js`, bump `VERSION` (e.g. `1.0.0` → `1.0.1`). Without this, phones keep the old cached copy. Also bump `APP_VERSION` in `js/views/settings.js` so Settings shows it.
-3. If you added a new file, add it to the `ASSETS` list in `sw.js`.
-4. Upload the changed files to the repo. Next time the app is opened, it shows **"A new version is ready, Update now"**.
+2. In `sw.js`, bump `VERSION`. Without this, phones keep the old cached copy. Also bump `APP_VERSION` in `js/views/settings.js`.
+3. If you added a file, add it to the `ASSETS` list in `sw.js`.
+4. Commit and push. Next time the app is opened it shows **"A new version is ready, Update now"**.
 
 ## Testing on a computer
 
@@ -33,11 +47,7 @@ A phone web app for logging expenses: snap a receipt, upload a photo or PDF, or 
 python -m http.server 8000
 ```
 
-Then open http://localhost:8000 in Chrome or Edge. Use the browser's device toolbar for a phone-sized view. The camera button opens a file picker on a computer.
-
-## Google Sheets (optional)
-
-Settings → Google Sheets walks the user through pasting a small Apps Script into their own Google Sheet and deploying it as a web app. The script lives in their Google account, appends/updates rows on an "Expenses" tab and saves receipt photos to a Drive folder. The script includes a random connection code so only this phone can write to it. This step is easiest on a computer; the app has a "Send to my computer" button for the instructions and script.
+Then open http://localhost:8000 in Chrome or Edge with the device toolbar for a phone-sized view.
 
 ## Files
 
@@ -47,12 +57,16 @@ Settings → Google Sheets walks the user through pasting a small Apps Script in
 | `sw.js` | Offline cache |
 | `css/app.css` | All styling (light and dark mode) |
 | `js/app.js` | Startup, routing, update prompt |
-| `js/ai.js` | Claude request, prompt and output schema |
+| `js/ai.js` | Claude requests: reading expenses, suggesting column matches |
 | `js/queue.js` | Offline queue: sends waiting entries to the AI, then syncs |
 | `js/entries.js` | Expense records |
 | `js/settings.js` | Defaults and presets (category lists, export formats) |
-| `js/exporter.js` | QuickBooks / Xero / Wave / CSV files, receipt photo sharing, backup & restore |
-| `js/sheets.js` | Google Sheets sync and the Apps Script template |
+| `js/fields.js` | The expense details a spreadsheet column can hold, plus rule-based column matching |
+| `js/mapper.js` | Column-matching screen and "reuse your categories" prompt |
+| `js/exporter.js` | Export files, Excel workbook updates, receipt sharing, backup & restore |
+| `js/xlsx.js`, `js/zip.js` | Reading, creating and editing Excel files (no library) |
+| `js/tabular.js` | Reading a layout from CSV, Excel or pasted text |
+| `js/sheets.js` | Google Sheets sync and the Apps Script |
 | `js/capture.js`, `js/image.js` | Camera, upload, voice/typed input, photo shrinking |
-| `js/views/` | Screens: home, entry, export, settings, setup |
+| `js/views/` | Screens: home, entry, export, settings, setup, Google Sheets, Excel, export formats |
 | `vendor/` | Official Anthropic TypeScript SDK 0.131.0 (browser bundle from jsDelivr), kept local so the app has no outside dependencies |

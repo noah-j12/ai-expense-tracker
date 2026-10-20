@@ -375,6 +375,17 @@ button.list-item:active { background: var(--surface-2); }
 .tag button { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); padding: 0; }
 .tag button svg { width: 14px; height: 14px; }
 
+.tag.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+.tag svg { width: 15px; height: 15px; }
+
+/* Column matching: "their column ← what goes in it" */
+.map-row { display: grid; grid-template-columns: minmax(0, 0.85fr) auto minmax(0, 1.3fr); align-items: center; gap: 6px; padding: 10px 12px; }
+.map-row .map-head { min-width: 0; }
+.map-row .map-head b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-row .map-head .tiny { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-row .select { min-height: 42px; padding: 8px 32px 8px 10px; background-position: right 8px center; font-size: 15px; }
+.map-row .chev svg { width: 18px; height: 18px; }
+
 /* ---------- Entry detail ---------- */
 
 .preview {

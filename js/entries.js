@@ -225,6 +225,20 @@ export function displayTitle(e) {
   return e.fields.description || 'Expense';
 }
 
+// Records that these entries are now in the user's Excel file as they currently are.
+// Doesn't touch updatedAt, so it never makes anything look edited.
+export function markExcelSynced(ids) {
+  return serial(async () => {
+    for (const id of ids) {
+      const e = await getEntry(id);
+      if (!e) continue;
+      e.excel = { version: e.updatedAt };
+      await putEntry(e);
+    }
+    emit('entries-changed', {});
+  });
+}
+
 export async function markExported(ids) {
   const now = Date.now();
   for (const id of ids) await updateEntry(id, (e) => { e.exportedAt = now; }, { syncSheet: false });

@@ -1,7 +1,7 @@
 // Service worker: keeps a copy of the app on the phone so it opens with no signal.
 // When you publish changes, bump VERSION so phones pick up the new files.
 
-const VERSION = '1.0.1';
+const VERSION = '1.1.0';
 const CACHE = `ai-expense-tracker-${VERSION}`;
 
 const ASSETS = [
@@ -15,17 +15,25 @@ const ASSETS = [
   'js/db.js',
   'js/entries.js',
   'js/exporter.js',
+  'js/fields.js',
   'js/image.js',
+  'js/mapper.js',
   'js/queue.js',
   'js/settings.js',
   'js/sheets.js',
+  'js/tabular.js',
   'js/ui.js',
   'js/util.js',
+  'js/xlsx.js',
+  'js/zip.js',
   'js/views/entry.js',
+  'js/views/excel-setup.js',
   'js/views/export.js',
+  'js/views/formats.js',
   'js/views/home.js',
   'js/views/settings.js',
   'js/views/setup.js',
+  'js/views/sheets-setup.js',
   'vendor/anthropic-sdk.mjs',
   'vendor/standardwebhooks_1.1.1.mjs',
   'vendor/stablelib_base64_1.0.1.mjs',

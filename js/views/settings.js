@@ -3,17 +3,20 @@ import { clearEverything } from '../db.js';
 import { listEntries, updateEntry } from '../entries.js';
 import { backupFile, deliverFiles, restoreBackup } from '../exporter.js';
 import { clearBlocked, kick } from '../queue.js';
-import { CURRENCIES, DATE_FORMATS, EXPORT_FORMATS, settings, updateSettings } from '../settings.js';
-import { resyncEverything, scriptCode, sheetsConnected, sheetsState, syncSheets, testSheets } from '../sheets.js';
+import { CURRENCIES, DATE_FORMATS, allExportFormats, exportFormatName, settings, updateSettings } from '../settings.js';
+import { sheetsConnected } from '../sheets.js';
 import { choiceList, choiceSheet, confirmSheet, field, nameListEditor, promptSheet, toast, toggleRow, topbar } from '../ui.js';
-import { formatDateTime, fill, h, icon, on, randomSecret, uid } from '../util.js';
+import { fill, h, icon, on, uid } from '../util.js';
+import { ExcelSettings } from './excel-setup.js';
+import { FormatsView } from './formats.js';
+import { SheetsSettings } from './sheets-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.0.1';
+export const APP_VERSION = '1.1.0';
 
-function goBack() {
+export function goBack(fallback = '#/settings') {
   if (history.length > 1) history.back();
-  else location.hash = '#/settings';
+  else location.hash = fallback;
 }
 
 function navItem({ iconName, label, value, href, onclick }) {
@@ -21,13 +24,16 @@ function navItem({ iconName, label, value, href, onclick }) {
     icon(iconName), h('div', { class: 'grow' }, label), value ? h('span', { class: 'value small' }, value) : null, h('span', { class: 'chev' }, icon('chevron')));
 }
 
-export function SettingsView({ params }) {
-  const sub = params[0] || '';
-  const pages = { businesses, categories, payments, ai, sheets, data };
+export function SettingsView({ params, query }) {
+  const [sub = '', id] = params;
+  if (sub === 'sheets') return SheetsSettings();
+  if (sub === 'excel') return ExcelSettings({ query });
+  if (sub === 'formats') return FormatsView({ id, query });
+  const pages = { books, categories, payments, ai, data };
   return (pages[sub] || main)();
 }
 
-function withRefresh(el, build, events = ['settings-changed']) {
+export function withRefresh(el, build, events = ['settings-changed']) {
   const render = () => fill(el, ...build());
   render();
   const offs = events.map((e) => on(e, render));
@@ -38,26 +44,26 @@ function main() {
   const el = h('div', { class: 'page' });
   return withRefresh(el, () => {
     const s = settings();
+    const custom = s.exportTemplates.length;
     return [
       topbar({ title: 'Settings', back: () => { location.hash = '#/'; } }),
-      h('div', { class: 'section-title' }, 'You'),
-      h('div', { class: 'list' },
-        navItem({ iconName: 'pen', label: 'Your name', value: s.ownerName || 'Not set', onclick: async () => {
-          const v = await promptSheet({ title: 'Your first name', value: s.ownerName, placeholder: 'e.g. Sam' });
-          if (v != null) await updateSettings({ ownerName: v });
-        } }),
-        navItem({ iconName: 'building', label: 'Businesses', value: String(s.businesses.length), href: '#/settings/businesses' }),
-      ),
       h('div', { class: 'section-title' }, 'How expenses are sorted'),
       h('div', { class: 'list' },
         navItem({ iconName: 'tag', label: 'Categories', value: String(s.categories.length), href: '#/settings/categories' }),
         navItem({ iconName: 'card', label: 'Payment methods', value: String(s.paymentMethods.length), href: '#/settings/payments' }),
+        navItem({ iconName: 'building', label: 'Books', value: s.businesses.length > 1 ? String(s.businesses.length) : 'Just one', href: '#/settings/books' }),
         navItem({ iconName: 'sparkle', label: 'AI', value: s.ai.apiKey ? MODELS.find((m) => m.id === s.ai.model)?.name || 'Connected' : 'Not connected', href: '#/settings/ai' }),
       ),
-      h('div', { class: 'section-title' }, 'Exports & syncing'),
+      h('div', { class: 'section-title' }, 'Where your expenses go'),
       h('div', { class: 'list' },
-        navItem({ iconName: 'share', label: 'Accounting software', value: EXPORT_FORMATS.find((f) => f.id === s.exportFormat)?.name, onclick: async () => {
-          const v = await choiceSheet({ title: 'Accounting software', options: EXPORT_FORMATS.map((f) => ({ label: f.name, hint: f.hint, value: f.id, selected: f.id === s.exportFormat })) });
+        navItem({ iconName: 'sheet', label: 'Google Sheets', value: sheetsConnected() ? 'Connected' : 'Off', href: '#/settings/sheets' }),
+        navItem({ iconName: 'file', label: 'Excel file', value: s.excel.tab ? 'Set up' : 'Off', href: '#/settings/excel' }),
+        navItem({ iconName: 'share', label: 'Export formats', value: custom ? `${custom} custom` : null, href: '#/settings/formats' }),
+      ),
+      h('div', { class: 'section-title' }, 'Exports'),
+      h('div', { class: 'list' },
+        navItem({ iconName: 'download', label: 'Default format', value: exportFormatName(s.exportFormat), onclick: async () => {
+          const v = await choiceSheet({ title: 'Default export format', options: allExportFormats().map((f) => ({ label: f.name, hint: f.hint, value: f.id, selected: f.id === s.exportFormat })) });
           if (v) await updateSettings({ exportFormat: v });
         } }),
         navItem({ iconName: 'clock', label: 'Date format', value: DATE_FORMATS.find((f) => f.id === s.dateFormat)?.name, onclick: async () => {
@@ -68,7 +74,6 @@ function main() {
           const v = await choiceSheet({ title: 'Default currency', options: CURRENCIES.map((c) => ({ label: c, value: c, selected: c === s.currency })) });
           if (v) await updateSettings({ currency: v });
         } }),
-        navItem({ iconName: 'sheet', label: 'Google Sheets', value: sheetsConnected() ? 'Connected' : 'Off', href: '#/settings/sheets' }),
       ),
       h('div', { class: 'section-title' }, 'Scanning'),
       h('div', { class: 'list' },
@@ -89,42 +94,51 @@ function main() {
   });
 }
 
-function businesses() {
+function books() {
   const el = h('div', { class: 'page' });
+  const add = async () => {
+    const s = settings();
+    // The first book has no name until a second one exists; name it now so the two can be told apart.
+    if (s.businesses.length === 1 && !s.businesses[0].name) {
+      const first = await promptSheet({ title: 'Name your current books', message: 'Everything you\'ve logged so far is in these.', placeholder: 'e.g. Personal, or a business name' });
+      if (!first) return;
+      await updateSettings((d) => { d.businesses[0].name = first; });
+    }
+    const v = await promptSheet({ title: 'Add books', placeholder: 'e.g. Personal, or a business name' });
+    if (v) await updateSettings((d) => { d.businesses.push({ id: uid(), name: v }); });
+  };
   return withRefresh(el, () => {
     const s = settings();
     return [
-      topbar({ title: 'Businesses', back: goBack }),
-      h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'With more than one, the home screen lets you pick which business you\'re logging to, and exports can be filtered by business.'),
+      topbar({ title: 'Books', back: () => goBack() }),
+      h('p', { class: 'small muted', style: { margin: '0 4px 12px' } },
+        'Keep separate books for different businesses, or for business and personal spending. With more than one, the home screen lets you pick which you\'re logging to, and exports can be filtered by books.'),
       h('div', { class: 'list' }, s.businesses.map((b) => h('div', { class: 'list-item' },
         icon('building'),
         h('button', { class: 'grow', style: { border: 0, background: 'none', textAlign: 'left', padding: 0 }, onclick: async () => {
-          const v = await promptSheet({ title: 'Rename business', value: b.name });
+          const v = await promptSheet({ title: 'Rename books', value: b.name, placeholder: 'e.g. Personal' });
           if (v) await updateSettings((d) => { d.businesses.find((x) => x.id === b.id).name = v; });
-        } }, b.name),
-        s.businesses.length > 1 ? h('button', { class: 'icon-btn', 'aria-label': `Remove ${b.name}`, onclick: () => removeBusiness(b) }, icon('trash')) : null,
+        } }, b.name || h('span', { class: 'muted' }, 'Main books (tap to name)')),
+        s.businesses.length > 1 ? h('button', { class: 'icon-btn', 'aria-label': `Remove ${b.name}`, onclick: () => removeBook(b) }, icon('trash')) : null,
       ))),
       h('div', { class: 'spacer' }),
-      h('button', { class: 'btn block', onclick: async () => {
-        const v = await promptSheet({ title: 'Add a business', placeholder: 'Business name' });
-        if (v) await updateSettings((d) => { d.businesses.push({ id: uid(), name: v }); });
-      } }, icon('plus'), 'Add a business'),
+      h('button', { class: 'btn block', onclick: add }, icon('plus'), 'Add books'),
     ];
   });
 }
 
-async function removeBusiness(b) {
+async function removeBook(b) {
   const s = settings();
   const others = s.businesses.filter((x) => x.id !== b.id);
   const affected = (await listEntries()).filter((e) => e.businessId === b.id);
   let moveTo = others[0].id;
   if (affected.length) {
     moveTo = await choiceSheet({
-      title: `Move ${affected.length} expense${affected.length === 1 ? '' : 's'} from ${b.name} to…`,
-      options: others.map((o) => ({ label: o.name, value: o.id, icon: 'building' })),
+      title: `Move ${affected.length} expense${affected.length === 1 ? '' : 's'} from ${b.name || 'these books'} to…`,
+      options: others.map((o) => ({ label: o.name || 'Main books', value: o.id, icon: 'building' })),
     });
     if (!moveTo) return;
-  } else if (!(await confirmSheet({ title: `Remove ${b.name}?`, confirmText: 'Remove', danger: true }))) {
+  } else if (!(await confirmSheet({ title: `Remove ${b.name || 'these books'}?`, confirmText: 'Remove', danger: true }))) {
     return;
   }
   for (const e of affected) await updateEntry(e.id, (x) => { x.businessId = moveTo; });
@@ -132,7 +146,7 @@ async function removeBusiness(b) {
     d.businesses = d.businesses.filter((x) => x.id !== b.id);
     if (d.activeBusinessId === b.id) d.activeBusinessId = moveTo;
   });
-  toast(`${b.name} removed`);
+  toast(`${b.name || 'Books'} removed`);
 }
 
 // Renaming a category or payment method also updates the expenses that use it.
@@ -145,7 +159,7 @@ async function renameInEntries(key, from, to) {
 function categories() {
   const s = settings();
   const el = h('div', { class: 'page' },
-    topbar({ title: 'Categories', back: goBack }),
+    topbar({ title: 'Categories', back: () => goBack() }),
     h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'The AI picks from this list. Tap a name to rename it; existing expenses are updated too.'),
     nameListEditor({
       items: s.categories,
@@ -164,7 +178,7 @@ function categories() {
 function payments() {
   const s = settings();
   const el = h('div', { class: 'page' },
-    topbar({ title: 'Payment methods', back: goBack }),
+    topbar({ title: 'Payment methods', back: () => goBack() }),
     h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'Include the last 4 digits of each card (like "Amex ending 1004") and the AI can match receipts to the right card.'),
     nameListEditor({
       items: s.paymentMethods,
@@ -194,23 +208,23 @@ function ai() {
     const key = input.value.trim();
     if (!key) {
       await updateSettings((d) => { d.ai.apiKey = ''; });
-      status.replaceChildren(h('span', { class: 'muted' }, 'Key removed.'));
+      fill(status, h('span', { class: 'muted' }, 'Key removed.'));
       return;
     }
-    status.replaceChildren(h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Checking your key…'));
+    fill(status, h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Checking your key…'));
     const res = await testApiKey(key, settings().ai.model);
     if (!res.ok) {
-      status.replaceChildren(h('span', { style: { color: 'var(--danger)' } }, res.message));
+      fill(status, h('span', { style: { color: 'var(--danger)' } }, res.message));
       return;
     }
     await updateSettings((d) => { d.ai.apiKey = key; });
     clearBlocked();
     kick();
-    status.replaceChildren(h('span', { style: { color: 'var(--accent)' } }, '✓ Connected. Waiting entries are being read now.'));
+    fill(status, h('span', { style: { color: 'var(--accent)' } }, '✓ Connected. Waiting entries are being read now.'));
   };
 
   const el = h('div', { class: 'page' },
-    topbar({ title: 'AI', back: goBack }),
+    topbar({ title: 'AI', back: () => goBack() }),
     h('div', { class: 'stack' },
       h('div', { class: 'card pad stack' },
         h('b', null, s.ai.apiKey ? 'Your Anthropic API key' : 'Connect your Anthropic account'),
@@ -235,106 +249,6 @@ function ai() {
     ),
   );
   return { el };
-}
-
-function sheets() {
-  const el = h('div', { class: 'page' });
-  return withRefresh(el, () => {
-    const s = settings();
-    if (sheetsConnected()) {
-      return [
-        topbar({ title: 'Google Sheets', back: goBack }),
-        h('div', { class: 'banner ok' }, icon('check'), h('div', { class: 'body' },
-          h('b', null, `Connected${s.sheets.connectedName ? ` to "${s.sheets.connectedName}"` : ''}`),
-          h('div', null, 'New and edited expenses are added to the "Expenses" tab automatically, with receipt photos saved in your Google Drive.'))),
-        sheetsState.error ? h('div', { class: 'banner warn' }, icon('alert'), h('div', { class: 'body' }, sheetsState.error)) : null,
-        sheetsState.lastSync ? h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, `Last synced ${formatDateTime(sheetsState.lastSync)}`) : null,
-        h('div', { class: 'stack' },
-          h('button', { class: 'btn', onclick: async () => { await syncSheets(); toast(sheetsState.error ? 'Sync had a problem' : 'Synced', { error: Boolean(sheetsState.error) }); } }, icon('refresh'), 'Sync now'),
-          h('button', { class: 'btn', onclick: async () => {
-            if (!(await confirmSheet({ title: 'Send everything again?', message: 'Every expense on this phone is re-sent to the sheet. Useful if rows were deleted in the sheet by accident.', confirmText: 'Send' }))) return;
-            await resyncEverything();
-            toast('Done');
-          } }, 'Re-send all expenses'),
-          h('button', { class: 'btn danger', onclick: async () => {
-            if (!(await confirmSheet({ title: 'Disconnect Google Sheets?', message: 'Your sheet keeps everything already in it. New expenses will only be saved on this phone.', confirmText: 'Disconnect', danger: true }))) return;
-            await updateSettings((d) => { d.sheets = { url: '', secret: '', connectedName: '' }; });
-          } }, 'Disconnect'),
-        ),
-      ];
-    }
-    return sheetsSetup(s);
-  }, ['settings-changed', 'sheets-changed']);
-}
-
-function sheetsSetup(s) {
-  // The connection code is created once and kept, so the script stays the same if they come back later.
-  let secret = s.sheets.pendingSecret;
-  if (!secret) {
-    secret = randomSecret();
-    updateSettings((d) => { d.sheets.pendingSecret = secret; });
-  }
-  const code = scriptCode(secret);
-  const url = h('input', { class: 'input', type: 'url', placeholder: 'https://script.google.com/macros/s/…/exec', autocapitalize: 'off', spellcheck: 'false' });
-  const status = h('div', { class: 'small' });
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(code);
-      toast('Script copied');
-    } catch {
-      toast('Copy failed. Use "Send to my computer" instead.', { error: true });
-    }
-  };
-  const sendToComputer = async () => {
-    const text = `AI Expense Tracker - Google Sheets setup\n\n${steps.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\n---- SCRIPT (copy everything below) ----\n\n${code}`;
-    const file = new File([text], 'AI Expense Tracker - Google Sheets setup.txt', { type: 'text/plain' });
-    if (navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: 'Google Sheets setup' }); } catch { /* cancelled */ }
-    } else {
-      await deliverFiles([file], 'Google Sheets setup');
-    }
-  };
-  const connect = async () => {
-    const value = url.value.trim();
-    status.replaceChildren(h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Connecting…'));
-    try {
-      const res = await testSheets(value, secret);
-      await updateSettings((d) => { d.sheets = { url: value, secret, connectedName: res.name || '' }; });
-      toast('Google Sheets connected');
-      resyncEverything();
-    } catch (err) {
-      status.replaceChildren(h('span', { style: { color: 'var(--danger)' } }, err.message));
-    }
-  };
-
-  const steps = [
-    'On a computer, open sheets.new to create a new Google Sheet. Name it something like "Expenses".',
-    'In the sheet, click Extensions > Apps Script.',
-    'Delete the code that\'s there and paste in the script below. Click the Save icon.',
-    'Click Deploy > New deployment. Click the gear next to "Select type" and choose Web app.',
-    'Set "Execute as" to Me and "Who has access" to Anyone. Click Deploy, then Authorize access and allow it. (Google may warn that the app is unverified; it\'s your own script, so click Advanced > Go to project.)',
-    'Copy the Web app URL and paste it into the box on your phone.',
-  ];
-
-  return [
-    topbar({ title: 'Google Sheets', back: goBack }),
-    h('div', { class: 'stack' },
-      h('p', { class: 'muted' }, 'Optional. Connect a Google Sheet and every expense is added automatically, with receipt photos saved to your Google Drive. It takes about 5 minutes on a computer, and you only do it once.'),
-      h('div', { class: 'card pad stack' },
-        h('ol', { class: 'steps' }, steps.map((t) => h('li', null, h('div', null, t)))),
-      ),
-      h('div', { class: 'field' }, h('div', { class: 'label' }, 'The script'), h('pre', { class: 'code' }, code)),
-      h('div', { class: 'btn-row' },
-        h('button', { class: 'btn', onclick: copy }, 'Copy script'),
-        h('button', { class: 'btn', onclick: sendToComputer }, icon('share'), 'Send to my computer'),
-      ),
-      field('Web app URL', url, 'Tip: email or text the URL to yourself from the computer, then paste it here.'),
-      h('button', { class: 'btn primary', onclick: connect }, 'Connect'),
-      status,
-      h('p', { class: 'tiny muted' }, 'The script contains a private connection code only this phone knows, so nobody else can add rows to your sheet.'),
-    ),
-  ];
 }
 
 function data() {
@@ -370,8 +284,8 @@ function data() {
   });
 
   el.append(
-    topbar({ title: 'Your data', back: goBack }),
-    h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'Everything is stored on this phone. Back up now and then (or connect Google Sheets) so nothing is lost if the phone is.'),
+    topbar({ title: 'Your data', back: () => goBack() }),
+    h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'Everything is stored on this phone. Back up now and then (or connect Google Sheets or Excel) so nothing is lost if the phone is.'),
     h('div', { class: 'list' },
       h('div', { class: 'list-item' }, icon('receipt'), h('div', { class: 'grow' }, 'Expenses'), count),
       h('div', { class: 'list-item' }, icon('database'), h('div', { class: 'grow' }, 'Storage used'), storage),
