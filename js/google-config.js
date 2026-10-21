@@ -10,7 +10,7 @@ export const GOOGLE = {
   clientSecret: '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',
   // "Choose a sheet you already have": a Web application client in the same project, used only to open
   // Google's own file-picking page. Its redirect URI is picked.html. No secret is needed (no code exchange).
-  pickerClientId: '',
+  pickerClientId: '964305676640-en8kqh4uo73jdrt2or4l0k6854s1curg.apps.googleusercontent.com',
   projectNumber: '964305676640',
 };
 
