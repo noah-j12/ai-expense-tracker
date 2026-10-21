@@ -1,4 +1,4 @@
-﻿// Service worker: keeps a copy of the app on the phone so it opens with no signal.
+// Service worker: keeps a copy of the app on the phone so it opens with no signal.
 // When you publish changes, bump VERSION so phones pick up the new files.
 
 const VERSION = '1.6.3';

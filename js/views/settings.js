@@ -1,4 +1,4 @@
-﻿import { MODELS, testApiKey } from '../ai.js';
+import { MODELS, testApiKey } from '../ai.js';
 import { clearEverything } from '../db.js';
 import { listEntries, updateEntry } from '../entries.js';
 import { backupFile, deliverFiles, restoreBackup } from '../exporter.js';
