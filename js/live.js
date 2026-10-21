@@ -12,6 +12,14 @@ import { toast } from './ui.js';
 import { fill, formatMoney, h, icon } from './util.js';
 
 export const LIVE_MODEL = 'gpt-realtime-2.1-mini';
+// OpenAI's transcription model for live audio (gpt-transcribe is for recorded files).
+const LIVE_TRANSCRIBE_MODEL = 'gpt-live-transcribe';
+
+// OpenAI's own explanation from an error response, if there is one.
+async function errorDetail(res) {
+  const text = await res.text().catch(() => '');
+  try { return JSON.parse(text).error?.message || text.slice(0, 200); } catch { return text.slice(0, 200); }
+}
 const OPENAI = 'https://api.openai.com/v1';
 const MAX_SESSION_MS = 4 * 60_000;
 
@@ -57,7 +65,8 @@ async function mintSecret(withTranscription) {
     audio: {
       input: {
         turn_detection: { type: 'semantic_vad' },
-        ...(withTranscription ? { transcription: { model: 'gpt-transcribe' } } : {}),
+        // Only for showing the user's words on screen; the conversation works without it.
+        ...(withTranscription ? { transcription: { model: LIVE_TRANSCRIBE_MODEL } } : {}),
       },
       output: { voice: TTS_VOICE },
     },
@@ -75,10 +84,14 @@ async function mintSecret(withTranscription) {
     throw new LiveError('No connection. Live conversations need internet.', 'offline');
   }
   if (res.status === 401 || res.status === 403) throw new LiveError('Your OpenAI key was rejected. Check it in Settings → AI.', 'auth');
-  const data = await res.json().catch(() => ({}));
   if (res.status === 400 && withTranscription) return mintSecret(false); // transcript display is optional
-  if (res.status === 429 && /quota|billing/i.test(JSON.stringify(data))) throw new LiveError('Your OpenAI account is out of credit. Add credit, then try again.', 'auth');
-  if (!res.ok || !data.value) throw new LiveError(`The live voice service couldn't start (${data.error?.message || res.status}).`, 'fatal');
+  if (!res.ok) {
+    const detail = await errorDetail(res);
+    if (res.status === 429 && /quota|billing/i.test(detail)) throw new LiveError('Your OpenAI account is out of credit. Add credit, then try again.', 'auth');
+    throw new LiveError(`The live voice service couldn't start. OpenAI said: ${detail || res.status}`, 'fatal');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!data.value) throw new LiveError('The live voice service couldn\'t start (no session key returned).', 'fatal');
   return data.value;
 }
 
@@ -167,7 +180,7 @@ export function startLive({ onUseKeyboard }) {
     } catch { /* meter is decoration only */ }
   }
 
-  async function connect() {
+  async function connect(withTranscription = true) {
     if (closed) return;
     setPhase('thinking', 'Connecting…');
     try {
@@ -177,7 +190,7 @@ export function startLive({ onUseKeyboard }) {
         throw new MicError('mic', err?.name === 'NotAllowedError' || err?.name === 'SecurityError' ? 'denied' : 'broken');
       }
       if (!stream.getAudioTracks()[0] || stream.getAudioTracks()[0].readyState !== 'live') throw new MicError('mic', 'broken');
-      const secret = await mintSecret(true);
+      const secret = await mintSecret(withTranscription);
       if (closed) return;
 
       pc = new RTCPeerConnection();
@@ -205,7 +218,16 @@ export function startLive({ onUseKeyboard }) {
       } catch {
         throw new LiveError('No connection. Live conversations need internet.', 'offline');
       }
-      if (!res.ok) throw new LiveError(`The live voice service couldn't connect (${res.status}).`, 'fatal');
+      if (!res.ok) {
+        const detail = await errorDetail(res);
+        console.warn('Realtime connect failed', res.status, detail);
+        // The on-screen transcript setting is the likeliest thing to be rejected; it's optional, so retry without it.
+        if (withTranscription && res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403) {
+          teardown();
+          return connect(false);
+        }
+        throw new LiveError(`The live voice service couldn't connect. OpenAI said: ${detail || `error ${res.status}`}`, 'fatal');
+      }
       await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() });
       if (closed) return;
       meter();

@@ -1,6 +1,7 @@
 import { loadSettings, settings } from './settings.js';
 import { startQueue } from './queue.js';
-import { h, icon } from './util.js';
+import { h, icon, isStandalone } from './util.js';
+import { InstallView, installRequired } from './views/install.js';
 import { HomeView } from './views/home.js';
 import { EntryView } from './views/entry.js';
 import { ExportView } from './views/export.js';
@@ -82,6 +83,13 @@ function registerServiceWorker() {
 }
 
 async function boot() {
+  // In a browser tab the app doesn't run; it asks to be installed first.
+  if (!isStandalone() && installRequired()) {
+    appEl.replaceChildren(InstallView().el);
+    registerServiceWorker(); // caches the app so it's ready (and offline-capable) once installed
+    window.matchMedia('(display-mode: standalone)').addEventListener?.('change', (e) => { if (e.matches) location.reload(); });
+    return;
+  }
   try {
     await loadSettings();
   } catch (err) {

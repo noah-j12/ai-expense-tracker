@@ -1,7 +1,7 @@
 // Service worker: keeps a copy of the app on the phone so it opens with no signal.
 // When you publish changes, bump VERSION so phones pick up the new files.
 
-const VERSION = '1.4.2';
+const VERSION = '1.5.0';
 const CACHE = `ai-expense-tracker-${VERSION}`;
 
 const ASSETS = [
@@ -36,6 +36,7 @@ const ASSETS = [
   'js/views/export.js',
   'js/views/formats.js',
   'js/views/home.js',
+  'js/views/install.js',
   'js/views/settings.js',
   'js/views/setup.js',
   'js/views/sheets-setup.js',
@@ -76,7 +77,13 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
 
   if (req.mode === 'navigate') {
-    event.respondWith(caches.match('index.html').then((hit) => hit || fetch(req)));
+    // The app itself opens from the cache (offline); other pages (about, privacy) come from the network.
+    const path = new URL(req.url).pathname;
+    if (path.endsWith('/') || path.endsWith('/index.html')) {
+      event.respondWith(caches.match('index.html').then((hit) => hit || fetch(req)));
+    } else {
+      event.respondWith(fetch(req).catch(() => caches.match(req)));
+    }
     return;
   }
   event.respondWith(
