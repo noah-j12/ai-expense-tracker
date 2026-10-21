@@ -9,7 +9,7 @@ export const GOOGLE = {
   clientId: '964305676640-t40935na6ombct5a74u4f2tn10rmdpv7.apps.googleusercontent.com',
   clientSecret: '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',
   // For the "choose an existing sheet" picker:
-  apiKey: '',
+  apiKey: 'AIzaSyDpC6bVTMQES2TnHx25kpuIoKPNj7Gvvws', // restricted to this site and the Picker API
   projectNumber: '964305676640',
 };
 
