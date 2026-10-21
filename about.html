@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Expense Tracker</title>
+  <meta name="description" content="A phone app for logging expenses: snap a receipt or say what you spent, and AI records it for your books.">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <style>
+    :root { --bg: #f4f6f4; --text: #16201b; --muted: #5e6b64; --accent: #0d7a61; --card: #fff; --border: #dce3de; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0e1411; --text: #e7eee9; --muted: #9eaba4; --accent: #3cc49d; --card: #161d19; --border: #2a3530; } }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 680px; margin: 0 auto; padding: 32px 20px 48px; }
+    header { display: flex; align-items: center; gap: 14px; }
+    header img { width: 56px; height: 56px; border-radius: 14px; }
+    h1 { font-size: 28px; margin: 0; }
+    h2 { font-size: 19px; margin: 28px 0 8px; }
+    p, li { color: var(--muted); }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 4px 18px; margin-top: 20px; }
+    a { color: var(--accent); }
+    .btn { display: inline-block; margin-top: 18px; padding: 12px 20px; border-radius: 12px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
+    footer { margin-top: 36px; font-size: 14px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <img src="icons/icon-192.png" alt="">
+      <h1>AI Expense Tracker</h1>
+    </header>
+    <p>A phone app for keeping track of expenses for bookkeeping. Snap a photo of a receipt, upload a PDF, or just say what you spent, and AI fills in the vendor, amount, date, category and payment method. It works offline and keeps everything ready for your accountant.</p>
+    <a class="btn" href="./">Open the app</a>
+
+    <div class="card">
+      <h2>What it does</h2>
+      <ul>
+        <li>Reads receipt photos and spoken or typed descriptions of purchases, using AI services the user connects with their own accounts.</li>
+        <li>Stores expenses on the user's phone, and works without a connection.</li>
+        <li>Exports to QuickBooks Online, Xero, Wave, Excel or a spreadsheet, or keeps an Excel workbook up to date.</li>
+        <li>Optionally adds each expense to a Google Sheet the user creates or chooses, with receipt photos saved to their Google Drive.</li>
+      </ul>
+      <h2>How it uses Google</h2>
+      <p>If you choose to connect Google Sheets, the app asks only for access to the files it creates or that you pick (Google's "drive.file" permission). It uses that access only to add, update and remove your expense rows and to save your receipt photos to a folder in your Drive. It can't see any of your other files.</p>
+    </div>
+
+    <footer>
+      <a href="privacy.html">Privacy policy</a> · <a href="https://github.com/noah-j12/ai-expense-tracker">Source code</a>
+    </footer>
+  </main>
+</body>
+</html>

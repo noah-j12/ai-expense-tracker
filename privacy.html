@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy · AI Expense Tracker</title>
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <style>
+    :root { --bg: #f4f6f4; --text: #16201b; --muted: #5e6b64; --accent: #0d7a61; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0e1411; --text: #e7eee9; --muted: #9eaba4; --accent: #3cc49d; } }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 680px; margin: 0 auto; padding: 32px 20px 48px; }
+    h1 { font-size: 28px; margin: 0 0 4px; }
+    h2 { font-size: 19px; margin: 28px 0 6px; }
+    p, li { color: var(--muted); }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Privacy Policy</h1>
+    <p>AI Expense Tracker · Last updated October 21, 2026</p>
+
+    <h2>The short version</h2>
+    <p>AI Expense Tracker has no servers and no accounts of its own. Your expenses, receipt photos and settings are stored on your own phone. The developer never receives or sees your data.</p>
+
+    <h2>What's stored, and where</h2>
+    <ul>
+      <li><b>On your phone:</b> your expenses, receipt photos, voice recordings waiting to be processed, settings, and any keys or connections you add. They stay in the app's storage on your device until you delete them or delete the app's data.</li>
+      <li><b>Nowhere else by default.</b> Data leaves your phone only to the services you choose to connect, described below.</li>
+    </ul>
+
+    <h2>Services you can choose to connect</h2>
+    <ul>
+      <li><b>Anthropic (Claude):</b> to read receipts and descriptions of purchases, the app sends the receipt image or text directly from your phone to Anthropic using your own API key. Anthropic's privacy policy applies.</li>
+      <li><b>OpenAI (optional voice features):</b> if you turn on voice conversations, your voice recordings and the app's spoken replies are processed by OpenAI using your own API key. OpenAI's privacy policy applies.</li>
+      <li><b>Google Sheets and Google Drive (optional):</b> see below.</li>
+      <li><b>Excel and file exports:</b> files you export or update go only where you send or save them.</li>
+    </ul>
+
+    <h2>Google user data</h2>
+    <p>If you connect Google Sheets, the app requests only the <code>drive.file</code> permission: access to the spreadsheet it creates or that you pick, and to the receipt folder it creates. It cannot see your other Google files.</p>
+    <ul>
+      <li><b>What it accesses:</b> the rows in the spreadsheet tab you choose, and the receipt photos it uploads to its own folder in your Drive.</li>
+      <li><b>How it's used:</b> only to add, update and remove your expense rows and to save receipt photos, so your sheet matches the expenses in the app.</li>
+      <li><b>Sharing:</b> Google data is not transferred to anyone, including the developer. It moves only between your phone and your own Google account.</li>
+      <li><b>Storage:</b> the app keeps a sign-in token for the connection on your phone only. You can disconnect anytime in the app (Settings → Google Sheets → Disconnect) or at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+    </ul>
+    <p>AI Expense Tracker's use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. Google data is never used for advertising, never sold, and never used to train AI models.</p>
+
+    <h2>Deleting your data</h2>
+    <p>In the app, Settings → Backup, restore &amp; storage → Delete all data erases everything on your phone. Anything already in your own Google Sheet, Drive or Excel files stays there until you delete it.</p>
+
+    <h2>Children</h2>
+    <p>The app isn't intended for children under 13.</p>
+
+    <h2>Changes</h2>
+    <p>If this policy changes, the updated version will be posted on this page with a new date.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about privacy: <a href="https://github.com/noah-j12/ai-expense-tracker/issues">open an issue on the project's GitHub page</a>.</p>
+
+    <p><a href="about.html">← About AI Expense Tracker</a></p>
+  </main>
+</body>
+</html>
