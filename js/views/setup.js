@@ -6,6 +6,8 @@ import { kick } from '../queue.js';
 import { CATEGORY_PRESETS, DEFAULT_PAYMENT_METHODS, EXPORT_FORMATS, replaceSettings, settings } from '../settings.js';
 import { choiceList, field, tagEditor, toast } from '../ui.js';
 import { h, icon, isIOS, isStandalone, shareGlyph } from '../util.js';
+import { VOICE_MODES } from '../speech.js';
+import { voiceChooser } from './voice-setup.js';
 
 export const CONSOLE_URL = 'https://console.anthropic.com/';
 
@@ -31,7 +33,7 @@ export function SetupView() {
   // Where expenses end up: 'excel' | 'sheets' | an export format id | 'later'.
   let destination = 'later';
 
-  const steps = [welcome, categories, payments, books, ai, finish];
+  const steps = [welcome, categories, payments, books, ai, voice, finish];
 
   function frame({ title, lead, content, next = 'Continue', onNext, skip, hideBack }) {
     const nextBtn = h('button', { class: 'btn primary', onclick: async () => {
@@ -183,6 +185,14 @@ export function SetupView() {
     });
   }
 
+  function voice() {
+    return frame({
+      title: 'How do you want to talk to it?',
+      lead: 'For logging an expense by voice instead of a photo. You can change this anytime in Settings.',
+      content: voiceChooser({ read: () => draft.voice, write: (fn) => fn(draft.voice), model: () => draft.ai.model }),
+    });
+  }
+
   function finish() {
     const installHelp = isIOS() && !isStandalone()
       ? h('div', { class: 'card pad stack' },
@@ -209,6 +219,7 @@ export function SetupView() {
           h('div', { class: 'list-item' }, icon('tag'), h('div', { class: 'grow' }, `${draft.categories.length} categories`)),
           h('div', { class: 'list-item' }, icon('share'), h('div', { class: 'grow' }, where)),
           h('div', { class: 'list-item' }, icon('key'), h('div', { class: 'grow' }, draft.ai.apiKey ? 'AI connected' : 'AI not connected yet')),
+          h('div', { class: 'list-item' }, icon('mic'), h('div', { class: 'grow' }, `Voice: ${VOICE_MODES.find((m) => m.id === (draft.voice.openaiKey ? draft.voice.mode : 'keyboard'))?.name}`)),
         ),
         h('p', { class: 'small muted' }, 'Running more than one business, or tracking personal spending separately? Add separate books in Settings → Books.'),
       ],

@@ -4,7 +4,7 @@ import { displayTitle, entryState, listEntries, needsAttention } from '../entrie
 import { queueState } from '../queue.js';
 import { businessName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
 import { sheetsConnected, sheetsState } from '../sheets.js';
-import { voiceEnabled } from '../speech.js';
+import { voiceEnabled, voiceMode } from '../speech.js';
 import { choiceSheet } from '../ui.js';
 import { formatDate, formatMoney, fill, h, icon, isIOS, isStandalone, on, shareGlyph, toISODate } from '../util.js';
 
@@ -68,7 +68,7 @@ export function HomeView() {
       h('button', { class: 'big-action secondary', onclick: openSpeakSheet },
         h('span', { class: 'bubble' }, icon('mic')),
         voiceEnabled()
-          ? h('div', null, h('strong', null, 'Talk to It'), h('span', null, 'Just tell it what you bought'))
+          ? h('div', null, h('strong', null, 'Talk to It'), h('span', null, voiceMode() === 'live' ? 'Have a quick conversation' : 'Just tell it what you bought'))
           : h('div', null, h('strong', null, 'Say or Type It'), h('span', null, '"$40 gas at Shell, business card"'))),
     ),
     h('div', { class: 'mini-actions' },

@@ -4,7 +4,8 @@ import { createEntry } from './entries.js';
 import { prepareImage } from './image.js';
 import { kick } from './queue.js';
 import { settings } from './settings.js';
-import { voiceEnabled } from './speech.js';
+import { startLive } from './live.js';
+import { voiceEnabled, voiceMode } from './speech.js';
 import { startTalk } from './talk.js';
 import { openSheet, toast } from './ui.js';
 import { h, icon } from './util.js';
@@ -95,9 +96,12 @@ function noteSheet(onDone) {
   ta.focus();
 }
 
-// With a voice key: a hands-free conversation. Without one: type or use the keyboard's dictation mic.
+// The voice option chosen in setup/Settings: live conversation, spoken replies, or the keyboard mic.
 export function openSpeakSheet() {
-  if (voiceEnabled()) startTalk({ onUseKeyboard: (said) => openDictationSheet(said) });
+  const onUseKeyboard = (said) => openDictationSheet(said);
+  const mode = voiceMode();
+  if (mode === 'live') startLive({ onUseKeyboard });
+  else if (mode === 'spoken') startTalk({ onUseKeyboard });
   else openDictationSheet();
 }
 

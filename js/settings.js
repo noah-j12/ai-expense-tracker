@@ -103,7 +103,8 @@ function defaults() {
     exportTemplates: [], // custom layouts: { id, name, columns: [{ header, field }] }
     ai: { apiKey: '', model: 'claude-opus-5-5', instructions: '' },
     // Optional voice conversations: OpenAI does the speech-to-text (Claude doesn't take audio).
-    voice: { openaiKey: '', talkBack: true, pause: 'normal' },
+    // mode: 'keyboard' | 'spoken' (AI voice replies) | 'live' (realtime conversation).
+    voice: { mode: 'keyboard', openaiKey: '', talkBack: true, pause: 'normal' },
     // Google Sheets: the tab and its columns ({ header, field }) once set up.
     // mode 'google': connected with Google sign-in (no script); 'script': the Apps Script method.
     sheets: { mode: 'script', url: '', secret: '', connectedName: '', tab: '', columns: [], google: { refreshToken: '', spreadsheetId: '', folderId: '' } },
@@ -122,6 +123,8 @@ export async function loadSettings() {
     ? { ...base, ...saved, ai: { ...base.ai, ...saved.ai }, sheets: { ...base.sheets, ...saved.sheets, google: { ...base.sheets.google, ...saved.sheets?.google } }, excel: { ...base.excel, ...saved.excel }, voice: { ...base.voice, ...saved.voice } }
     : base;
   if (!current.businesses.length) current.businesses = base.businesses;
+  // Before voice modes existed, having an OpenAI key meant spoken conversations.
+  if (saved?.voice?.openaiKey && !saved.voice.mode) current.voice.mode = 'spoken';
   if (!current.businesses.some((b) => b.id === current.activeBusinessId)) current.activeBusinessId = current.businesses[0].id;
   return current;
 }

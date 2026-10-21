@@ -4,15 +4,14 @@
 import { talkTurn } from './ai.js';
 import { applyAIResult, createEntry } from './entries.js';
 import { kick } from './queue.js';
-import { MicError, prepareAudio, recordTurn, releaseAudio, speak, stopSpeaking, transcribeWithRetry, unlockSpeech } from './speech.js';
+import { MicError, prepareAudio, recordTurn, releaseAudio, speak, stopSpeaking, transcribeWithRetry } from './speech.js';
 import { toast } from './ui.js';
 import { fill, formatMoney, h, icon } from './util.js';
 
 const MAX_USER_TURNS = 3;
 
 export function startTalk({ onUseKeyboard }) {
-  // Both must happen during the tap that opened this screen (iOS rule).
-  unlockSpeech();
+  // Must happen during the tap that opened this screen (iOS rule), so the AI voice can play later.
   prepareAudio();
 
   const createdAt = Date.now();

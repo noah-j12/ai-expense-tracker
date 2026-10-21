@@ -10,8 +10,11 @@ A phone web app for logging expenses: snap a receipt, upload a photo or PDF, or 
 ## How entries are read
 
 - **Receipts (photo or PDF):** the image itself goes to Claude, which reads it the way a person would (no separate text-recognition step). It handles crumpled or faded receipts and handwritten tips, cleans up vendor names, picks a category from the user's list, and flags anything it's unsure of for review.
-- **Voice, without setup:** the user types or uses the iPhone keyboard's dictation mic; Claude interprets the text, rambling and self-corrections included.
-- **Voice conversations (optional, Settings → AI):** with an OpenAI API key, "Talk to It" listens hands-free, stops when the user pauses, transcribes with OpenAI `gpt-transcribe` (Claude doesn't take audio), and Claude either logs the expense or asks one short follow-up out loud (at most two). Offline, the recording is saved and processed later. If the microphone fails, the app retries quietly once, then explains the problem and offers Try again / Use the keyboard instead; it never switches modes on its own.
+- **Voice:** chosen in setup and Settings → AI, with an estimated cost per entry shown for each option (it adjusts to the chosen Claude model):
+  - **Keyboard mic:** type or use the iPhone keyboard's dictation; Claude interprets the text, rambling and self-corrections included. No extra account.
+  - **Voice with spoken replies** (OpenAI key): listens hands-free and stops when the user pauses. Speech is transcribed with OpenAI `gpt-transcribe` (Claude doesn't take audio), Claude logs it or asks a short follow-up, and questions are spoken in OpenAI's AI voice (`gpt-4o-mini-tts`, "marin"). That TTS model retires 2027-01-06, so move it to its successor before then. Offline, recordings are saved and processed later.
+  - **Live conversation** (OpenAI key): ChatGPT-style realtime voice (`gpt-realtime-2.1-mini` over WebRTC, semantic turn detection, interruptible). The phone mints a short-lived session key with the user's own OpenAI key, so no server is needed. When it has the details, the voice model calls `log_expense`, and Claude turns that into the record using the user's categories and rules.
+  - If the microphone fails, the app retries quietly once, then explains the problem and offers Try again / Use the keyboard instead. It never switches modes on its own.
 
 ## Where expenses can go
 
@@ -75,6 +78,8 @@ Then open http://localhost:8000 in Chrome or Edge with the device toolbar for a 
 | `js/sheets.js` | Google Sheets sync (both methods) and the Apps Script |
 | `js/google.js`, `js/google-config.js` | "Connect with Google": device-code sign-in, Sheets/Drive API calls, file picker; registration values |
 | `js/capture.js`, `js/image.js` | Camera, upload, voice/typed input, photo shrinking |
-| `js/speech.js`, `js/talk.js` | Voice conversations: recording with pause detection, transcription, spoken replies, the conversation screen |
+| `js/speech.js`, `js/talk.js` | Voice with spoken replies: recording with pause detection, transcription, AI voice, cost estimates, the conversation screen |
+| `js/live.js` | Live conversation over OpenAI's realtime voice (WebRTC) |
+| `js/views/voice-setup.js` | The voice-option chooser used in setup and Settings |
 | `js/views/` | Screens: home, entry, export, settings, setup, Google Sheets, Excel, export formats |
 | `vendor/` | Official Anthropic TypeScript SDK 0.131.0 (browser bundle from jsDelivr), kept local so the app has no outside dependencies |

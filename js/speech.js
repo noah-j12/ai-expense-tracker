@@ -26,8 +26,9 @@ export class VoiceError extends Error {
   }
 }
 
+// True when "Talk to It" uses one of the OpenAI voice modes rather than the keyboard mic.
 export function voiceEnabled() {
-  return Boolean(settings().voice?.openaiKey);
+  return voiceMode() !== 'keyboard';
 }
 
 // ---------- Recording ----------
@@ -41,6 +42,8 @@ export function prepareAudio() {
   }
   audioCtx?.resume?.();
 }
+
+export const audioContext = () => audioCtx;
 
 export function releaseAudio() {
   audioCtx?.close?.().catch(() => {});
@@ -224,48 +227,75 @@ export async function transcribeWithRetry(blob, tries = 3) {
   }
 }
 
-// ---------- Talking back ----------
+// ---------- Talking back (AI voice) ----------
 
-let voice = null;
-function pickVoice() {
-  if (voice || !window.speechSynthesis) return voice;
-  const lang = (navigator.language || 'en-US').toLowerCase();
-  const voices = speechSynthesis.getVoices();
-  const sameLang = voices.filter((v) => v.lang?.toLowerCase().startsWith(lang.slice(0, 2)));
-  voice = sameLang.find((v) => /premium|enhanced/i.test(v.name) && v.lang.toLowerCase() === lang)
-    || sameLang.find((v) => v.lang.toLowerCase() === lang && v.localService)
-    || sameLang[0] || null;
-  return voice;
-}
+// OpenAI is retiring this model on 2027-01-06; move to its replacement before then.
+export const TTS_MODEL = 'gpt-4o-mini-tts';
+export const TTS_VOICE = 'marin';
 
-// iOS only lets a page speak if the first utterance happens during a tap.
-export function unlockSpeech() {
-  if (!window.speechSynthesis) return;
+let playing = null; // the AudioBufferSourceNode currently speaking
+
+// Speaks with OpenAI's AI voice through the AudioContext opened during the user's tap
+// (so iOS allows playback). If the voice can't be fetched, the text is still on screen.
+export async function speak(text) {
+  const key = settings().voice?.openaiKey;
+  if (!text || !key || settings().voice?.talkBack === false || !audioCtx) return;
+  let audio;
   try {
-    const u = new SpeechSynthesisUtterance(' ');
-    u.volume = 0;
-    speechSynthesis.speak(u);
-  } catch { /* speech not available */ }
-}
-
-export function speak(text) {
-  return new Promise((resolve) => {
-    if (!text || !window.speechSynthesis || settings().voice?.talkBack === false) return resolve();
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    const v = pickVoice();
-    if (v) u.voice = v;
-    u.rate = 1.05;
-    let done = false;
-    const end = () => { if (!done) { done = true; resolve(); } };
-    u.onend = end;
-    u.onerror = end;
-    // Safety net: some iOS versions never fire onend.
-    setTimeout(end, 1500 + text.length * 90);
-    speechSynthesis.speak(u);
+    const res = await fetch(`${OPENAI}/audio/speech`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: TTS_MODEL,
+        voice: TTS_VOICE,
+        input: text,
+        instructions: 'Warm, relaxed and brief, like a helpful assistant confirming something quickly.',
+        response_format: 'mp3',
+      }),
+    });
+    if (!res.ok) return;
+    audio = await audioCtx.decodeAudioData(await res.arrayBuffer());
+  } catch {
+    return;
+  }
+  await new Promise((resolve) => {
+    stopSpeaking();
+    const src = audioCtx.createBufferSource();
+    src.buffer = audio;
+    src.connect(audioCtx.destination);
+    src.onended = () => { if (playing === src) playing = null; resolve(); };
+    playing = src;
+    audioCtx.resume?.();
+    src.start();
   });
 }
 
 export function stopSpeaking() {
-  window.speechSynthesis?.cancel();
+  try { playing?.stop(); } catch { /* already stopped */ }
+  playing = null;
+}
+
+// ---------- Voice options and cost estimates ----------
+
+export const VOICE_MODES = [
+  { id: 'keyboard', name: 'Keyboard mic', hint: 'Tap the mic on the keyboard and talk; the app reads what you said. No extra account.' },
+  { id: 'spoken', name: 'Voice with spoken replies', hint: 'You talk; it asks any questions out loud in a natural AI voice. Needs an OpenAI key.' },
+  { id: 'live', name: 'Live conversation', hint: 'Like ChatGPT\'s voice mode: instant back-and-forth, and you can interrupt it. Needs an OpenAI key.' },
+];
+
+// Rough per-entry estimates by AI setting (Claude model), in cents.
+const COSTS = {
+  'claude-opus-5-5': { keyboard: '~1¢', spoken: '~2–4¢', live: '~3–6¢' },
+  'claude-sonnet-5-5': { keyboard: '~0.5¢', spoken: '~1–2.5¢', live: '~2.5–5¢' },
+  'claude-haiku-5-5': { keyboard: '~0.05¢', spoken: '~0.4–1¢', live: '~2–5¢' },
+};
+
+export function voiceCost(mode, model = settings().ai.model) {
+  return (COSTS[model] || COSTS['claude-opus-5-5'])[mode];
+}
+
+export function voiceMode() {
+  const v = settings().voice || {};
+  if (!v.openaiKey) return 'keyboard';
+  return v.mode || 'spoken';
 }

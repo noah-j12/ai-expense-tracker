@@ -5,7 +5,7 @@ import { backupFile, deliverFiles, restoreBackup } from '../exporter.js';
 import { clearBlocked, kick } from '../queue.js';
 import { CURRENCIES, DATE_FORMATS, allExportFormats, exportFormatName, settings, updateSettings } from '../settings.js';
 import { sheetsConnected } from '../sheets.js';
-import { PAUSE_OPTIONS, testVoiceKey } from '../speech.js';
+import { voiceChooser } from './voice-setup.js';
 import { choiceList, choiceSheet, confirmSheet, field, nameListEditor, promptSheet, toast, toggleRow, topbar } from '../ui.js';
 import { fill, h, icon, on, uid } from '../util.js';
 import { ExcelSettings } from './excel-setup.js';
@@ -13,7 +13,7 @@ import { FormatsView } from './formats.js';
 import { SheetsSettings } from './sheets-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 
 export function goBack(fallback = '#/settings') {
   if (history.length > 1) history.back();
@@ -204,6 +204,7 @@ function ai() {
     placeholder: 'e.g. Anything from Lowe\'s or Home Depot is Materials. Meals over $75 need a note saying who it was with.',
   });
   instructions.value = s.ai.instructions || '';
+  const voiceWrap = h('div', null, voiceSection());
 
   const saveKey = async () => {
     const key = input.value.trim();
@@ -239,7 +240,8 @@ function ai() {
       choiceList({
         options: MODELS.map((m) => ({ id: m.id, name: m.name, hint: m.detail })),
         value: s.ai.model,
-        onChange: (id) => updateSettings((d) => { d.ai.model = id; }),
+        // Voice cost estimates depend on the model, so redraw them.
+        onChange: (id) => updateSettings((d) => { d.ai.model = id; }).then(() => fill(voiceWrap, voiceSection())),
       }),
       h('div', { class: 'section-title' }, 'Your own rules'),
       field('Extra instructions for the AI', instructions, 'Optional. Written in plain English; applied to every receipt.'),
@@ -247,57 +249,22 @@ function ai() {
         await updateSettings((d) => { d.ai.instructions = instructions.value.trim(); });
         toast('Instructions saved');
       } }, 'Save instructions'),
-      voiceSection(),
+      voiceWrap,
     ),
   );
   return { el };
 }
 
-// Optional hands-free voice: OpenAI turns speech into text (Claude doesn't take audio).
+// How "Talk to It" works: keyboard mic, spoken replies, or a live conversation (the last two use OpenAI).
 function voiceSection() {
-  const s = settings();
-  const { input, row } = apiKeyInput(s.voice.openaiKey);
-  input.placeholder = 'sk-…';
-  const status = h('div', { class: 'small' });
-  const save = async () => {
-    const key = input.value.trim();
-    if (!key) {
-      await updateSettings((d) => { d.voice.openaiKey = ''; });
-      fill(status, h('span', { class: 'muted' }, 'Voice conversations turned off.'));
-      return;
-    }
-    fill(status, h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Checking your key…'));
-    const res = await testVoiceKey(key);
-    if (!res.ok) {
-      fill(status, h('span', { style: { color: 'var(--danger)' } }, res.message));
-      return;
-    }
-    await updateSettings((d) => { d.voice.openaiKey = key; });
-    fill(status, h('span', { style: { color: 'var(--accent)' } }, '✓ Voice conversations are on. Tap "Talk to It" on the home screen.'));
-  };
-  const container = h('div', { class: 'stack' },
-    h('div', { class: 'section-title' }, 'Voice conversations (optional)'),
-    h('div', { class: 'card pad stack' },
-      h('p', { class: 'small muted' }, 'Just talk, pauses and all, and the app asks out loud if it needs anything else. Speech is turned into text by OpenAI, which costs about half a cent per minute of talking, paid to OpenAI directly. Without this, you can still talk using the keyboard\'s mic.'),
-      s.voice.openaiKey ? null : h('ol', { class: 'steps' },
-        h('li', null, h('div', null, 'Go to ', h('a', { href: 'https://platform.openai.com/api-keys', target: '_blank', rel: 'noopener' }, 'platform.openai.com'), ' and sign in or create an account.')),
-        h('li', null, h('div', null, 'Under ', h('b', null, 'Billing'), ', add a small amount of credit ($5 lasts a very long time).')),
-        h('li', null, h('div', null, 'Under ', h('b', null, 'API keys'), ', create a key, copy it and paste it below.'))),
-      field('OpenAI API key', row),
-      h('button', { class: 'btn primary', onclick: save }, s.voice.openaiKey ? 'Save & test key' : 'Turn on voice conversations'),
-      status,
-    ),
-    h('div', { class: 'list' },
-      toggleRow({ label: 'Talk back out loud', hint: 'Questions and confirmations are spoken. Off: shown on screen only.', checked: s.voice.talkBack !== false, onChange: (v) => updateSettings((d) => { d.voice.talkBack = v; }) }),
-      navItem({ iconName: 'clock', label: 'Pause before it stops listening', value: PAUSE_OPTIONS.find((p) => p.id === s.voice.pause)?.name || 'Normal', onclick: async () => {
-        const v = await choiceSheet({ title: 'Pause before it stops listening', options: PAUSE_OPTIONS.map((p) => ({ label: p.name, hint: p.hint, value: p.id, selected: p.id === s.voice.pause })) });
-        if (!v) return;
-        await updateSettings((d) => { d.voice.pause = v; });
-        container.replaceWith(voiceSection());
-      } }),
-    ),
+  return h('div', { class: 'stack' },
+    h('div', { class: 'section-title' }, 'How you talk to it'),
+    voiceChooser({
+      read: () => settings().voice,
+      write: (fn) => updateSettings((d) => fn(d.voice)),
+      model: () => settings().ai.model,
+    }),
   );
-  return container;
 }
 
 function data() {
