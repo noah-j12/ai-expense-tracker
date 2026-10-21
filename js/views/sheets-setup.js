@@ -3,7 +3,7 @@
 import { listEntries } from '../entries.js';
 import { deliverFiles } from '../exporter.js';
 import { fieldLabel } from '../fields.js';
-import { cleanLayout, columnMapper, extraColumnsPicker, offerLearnedLists, suggestMapping } from '../mapper.js';
+import { cleanLayout, columnMapper, extraColumnsPicker, mergeLearnedLists, pickTab, planLayout, suggestMapping } from '../mapper.js';
 import { settings, updateSettings } from '../settings.js';
 import {
   defaultSheetColumns, distinctValues, prepareTab, resyncEverything, scriptCode, sheetsConnected, sheetsInfo, sheetsLinked, sheetsState, syncSheets,
@@ -88,7 +88,11 @@ export function SheetsSettings({ query } = {}) {
     flow.busy = 'Saving…';
     render();
     try {
-      const added = extras.selected();
+      let added = extras.selected();
+      // Never save a layout that can't receive anything: fall back to the standard columns.
+      if (!flow.mapping.some(Boolean) && !added.length) {
+        added = defaultSheetColumns().filter((c) => !flow.headers.includes(c.header));
+      }
       await prepareTab({ tab: flow.tab, addHeaders: added.map((c) => c.header) });
       const columns = [...flow.headers.map((header, i) => ({ header, field: flow.mapping[i] || '' })), ...added];
       // Reuse the category / payment names already in the sheet, if the user wants.
@@ -96,8 +100,8 @@ export function SheetsSettings({ query } = {}) {
       const found = await distinctValues(flow.tab, lookup).catch(() => ({}));
       const catHeader = columns.find((c) => c.field === 'category')?.header;
       const payHeader = columns.find((c) => c.field === 'paymentMethod')?.header;
-      await offerLearnedLists({ categories: found[catHeader] || [], paymentMethods: found[payHeader] || [] }, 'sheet');
-      await saveLayout(flow.tab, columns);
+      await mergeLearnedLists({ categories: found[catHeader] || [], paymentMethods: found[payHeader] || [] });
+      await saveLayout(flow.tab, columns, { auto: true });
     } catch (err) {
       toast(err.message, { error: true });
     } finally {
@@ -106,12 +110,55 @@ export function SheetsSettings({ query } = {}) {
     }
   }
 
-  async function saveLayout(tab, columns) {
+  // Reads the sheet and sets everything up with no questions: picks the tab, matches columns (AI),
+  // adds missing ones, reuses the sheet's categories, and sends existing expenses. Only asks which tab
+  // when two look equally likely.
+  async function autoConfigure() {
+    flow.busy = 'Reading your sheet…';
+    render();
+    try {
+      const info = flow.info = google() ? await spreadsheetInfo(settings().sheets.google.spreadsheetId) : await sheetsInfo();
+      if (info.name && !settings().sheets.connectedName) await updateSettings((d) => { d.sheets.connectedName = info.name; });
+      const choice = pickTab(info.tabs);
+      if (choice.ambiguous) {
+        flow.note = 'More than one tab looks like an expense log. Which one should expenses go into?';
+        flow.step = 'tabs';
+        return;
+      }
+      flow.busy = 'Matching your columns…';
+      render();
+      const plan = await planLayout(choice.tab, { allowReceipt: true });
+      await prepareTab({ tab: choice.tab.name, headers: choice.empty ? plan.added.map((c) => c.header) : undefined, addHeaders: plan.added.map((c) => c.header) });
+      // Category / payment names already in the sheet become the app's lists.
+      const catCol = plan.headers.indexOf(plan.columns.find((c) => c.field === 'category')?.header);
+      const payCol = plan.headers.indexOf(plan.columns.find((c) => c.field === 'paymentMethod')?.header);
+      const allRows = choice.tab.allRows || choice.tab.sample || [];
+      const clean = cleanLayout(choice.tab.headers || [], allRows).rows;
+      const learned = await mergeLearnedLists({
+        categories: catCol < 0 ? [] : clean.map((r) => r[catCol]),
+        paymentMethods: payCol < 0 ? [] : clean.map((r) => r[payCol]),
+      });
+      flow.summary = { tab: choice.tab.name, matched: plan.matched, added: plan.added, learned, empty: choice.empty };
+      await saveLayout(choice.tab.name, plan.columns, { auto: true });
+    } catch (err) {
+      toast(err.message, { error: true });
+      flow.step = null;
+    } finally {
+      flow.busy = '';
+      render();
+    }
+  }
+
+  async function saveLayout(tab, columns, { auto = false } = {}) {
     const switched = settings().sheets.tab !== tab;
     await updateSettings((d) => { d.sheets.tab = tab; d.sheets.columns = columns; });
     flow.step = null;
     const count = (await listEntries()).length;
-    if (count) {
+    if (count && auto) {
+      // Expenses already on the phone go in too, as new rows (ones already there are updated, not duplicated).
+      await resyncEverything({ forgetRows: switched });
+      if (sheetsState.error) toast(`Couldn't send to the sheet: ${sheetsState.error}`, { error: true });
+    } else if (count) {
       const send = await confirmSheet({
         title: `Send your ${count} expense${count === 1 ? '' : 's'} to the sheet?`,
         message: `They'll be added to "${tab}" below any rows already there. Ones already in the sheet are updated, not duplicated.`,
@@ -119,7 +166,7 @@ export function SheetsSettings({ query } = {}) {
       });
       if (send) {
         await resyncEverything({ forgetRows: switched });
-        toast(sheetsState.error ? 'Sync had a problem' : 'Sent to Google Sheets', { error: Boolean(sheetsState.error) });
+        toast(sheetsState.error ? `Couldn't send to the sheet: ${sheetsState.error}` : 'Sent to Google Sheets', { error: Boolean(sheetsState.error) });
       }
     } else {
       toast('Google Sheets connected');
@@ -156,9 +203,7 @@ export function SheetsSettings({ query } = {}) {
       try {
         const info = await sheetsInfo(value, secret);
         await updateSettings((d) => { d.sheets = { ...d.sheets, mode: 'script', url: value, secret, connectedName: info.name || '', tab: '', columns: [] }; });
-        flow.info = info;
-        flow.step = 'tabs';
-        render();
+        await autoConfigure();
       } catch (err) {
         fill(status, h('span', { style: { color: 'var(--danger)' } }, err.message));
       }
@@ -286,7 +331,8 @@ export function SheetsSettings({ query } = {}) {
       const out = await createSpreadsheet(name, 'Expenses', columns.map((c) => c.header));
       await updateSettings((d) => { d.sheets.google.spreadsheetId = out.spreadsheetId; d.sheets.connectedName = out.name; });
       flow.busy = '';
-      await saveLayout('Expenses', columns);
+      flow.summary = { tab: 'Expenses', matched: [], added: columns, learned: '', empty: true };
+      await saveLayout('Expenses', columns, { auto: true });
     } catch (err) {
       toast(err.message, { error: true });
     } finally {
@@ -340,7 +386,7 @@ export function SheetsSettings({ query } = {}) {
       d.sheets.google.spreadsheetId = f.id;
       d.sheets.connectedName = f.name;
     });
-    await loadInfo();
+    await autoConfigure();
   }
 
   function pickingStep() {
@@ -400,7 +446,7 @@ export function SheetsSettings({ query } = {}) {
     for (let i = 2; names.has(newName); i++) newName = `Expenses ${i}`;
     return [
       topbar({ title: 'Pick a tab', back: () => { flow.step = null; render(); } }),
-      h('p', { class: 'muted', style: { margin: '0 4px 12px' } }, `Which tab in "${flow.info?.name || 'your sheet'}" should expenses go into?`),
+      h('p', { class: 'muted', style: { margin: '0 4px 12px' } }, flow.note || `Which tab in "${flow.info?.name || 'your sheet'}" should expenses go into?`),
       h('div', { class: 'list' },
         tabs.map((t) => {
           const cols = t.headers.filter((x) => x && x !== 'AI Expense Tracker ID').length;
@@ -420,13 +466,27 @@ export function SheetsSettings({ query } = {}) {
     const mapper = columnMapper({ headers: flow.headers, samples: flow.rows, mapping: flow.mapping, onChange: () => extras.refresh() });
     return [
       topbar({ title: 'Match your columns', back: () => { flow.step = 'tabs'; render(); } }),
-      h('p', { class: 'muted', style: { margin: '0 4px 12px' } }, `Here's what the app will put in each column of "${flow.tab}". Columns set to "Leave blank" are never touched.`),
+      h('p', { class: 'muted', style: { margin: '0 4px 12px' } }, `Your columns in "${flow.tab}" are matched below, and any it's missing are added for you. Check it over and tap Save. Columns set to "Leave blank" are never touched.`),
       mapper,
-      h('div', { class: 'section-title' }, 'Add columns your sheet doesn\'t have (optional)'),
+      h('div', { class: 'section-title' }, 'Columns that will be added (tap to skip any)'),
       extras.el,
       h('div', { class: 'spacer' }),
       h('button', { class: 'btn primary block', style: { marginTop: '16px' }, onclick: () => saveMapping(extras) }, 'Save'),
     ];
+  }
+
+  // What automatic setup did, shown once right after it runs.
+  function summaryCard() {
+    const x = flow.summary;
+    if (!x) return null;
+    const list = (cols) => cols.map((c) => (c.header === fieldLabel(c.field) ? c.header : `${c.header} (${fieldLabel(c.field).toLowerCase()})`)).join(', ');
+    return h('div', { class: 'card pad stack', style: { marginBottom: '12px' } },
+      h('b', null, 'Set up automatically'),
+      h('p', { class: 'small muted' }, `Each expense you log is added as a new row in "${x.tab}".`),
+      x.matched.length ? h('p', { class: 'small' }, h('b', null, 'Your columns: '), list(x.matched)) : null,
+      x.added.length ? h('p', { class: 'small' }, h('b', null, x.empty ? 'Columns created: ' : 'Columns added: '), x.added.map((c) => c.header).join(', ')) : null,
+      x.learned ? h('p', { class: 'small' }, h('b', null, 'Lists: '), x.learned.charAt(0).toUpperCase() + x.learned.slice(1), '.') : null,
+      h('p', { class: 'tiny muted' }, 'Want it different? Tap Change columns below.'));
   }
 
   function connected() {
@@ -438,6 +498,7 @@ export function SheetsSettings({ query } = {}) {
         h('b', null, `Connected to "${s.sheets.connectedName || 'your sheet'}"`),
         h('div', null, `Expenses go into the "${s.sheets.tab}" tab automatically.`))),
       sheetsState.error ? h('div', { class: 'banner warn' }, icon('alert'), h('div', { class: 'body' }, sheetsState.error)) : null,
+      summaryCard(),
       sheetsState.lastSync ? h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, `Last synced ${formatDateTime(sheetsState.lastSync)}`) : null,
       h('div', { class: 'section-title' }, 'Columns'),
       h('div', { class: 'list' }, mapped.map((c) => h('div', { class: 'list-item' }, h('div', { class: 'grow' }, h('b', null, c.header)), h('span', { class: 'value small' }, fieldLabel(c.field))))),
@@ -449,7 +510,7 @@ export function SheetsSettings({ query } = {}) {
         } }, icon('pen'), 'Change columns'),
         h('button', { class: 'btn', onclick: loadInfo }, icon('sheet'), 'Use a different tab'),
         google() ? h('button', { class: 'btn', onclick: () => { flow.step = 'choose'; render(); } }, icon('file'), 'Use a different spreadsheet') : null,
-        h('button', { class: 'btn', onclick: async () => { await syncSheets(); toast(sheetsState.error ? 'Sync had a problem' : 'Synced', { error: Boolean(sheetsState.error) }); } }, icon('refresh'), 'Sync now'),
+        h('button', { class: 'btn', onclick: async () => { await syncSheets(); toast(sheetsState.error ? `Sync failed: ${sheetsState.error}` : 'Synced', { error: Boolean(sheetsState.error) }); } }, icon('refresh'), 'Sync now'),
         h('button', { class: 'btn', onclick: async () => {
           if (!(await confirmSheet({ title: 'Send everything again?', message: 'Every expense on this phone is re-sent. Rows already in the sheet are updated, missing ones are added back.', confirmText: 'Send' }))) return;
           await resyncEverything();
@@ -484,7 +545,7 @@ export function SheetsSettings({ query } = {}) {
       // Script connected but no tab picked yet (e.g. they left mid-setup). Try once automatically.
       if (!flow.autoTried) {
         flow.autoTried = true;
-        loadInfo();
+        autoConfigure();
         return null;
       }
       return fill(el, topbar({ title: 'Google Sheets', back: () => goBack() }),

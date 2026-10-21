@@ -161,6 +161,24 @@ export function debounce(fn, ms) {
   return wrapped;
 }
 
+// ---------- In-app navigation ----------
+// Back buttons follow the screens visited inside the app, never the browser's history (which can
+// contain Google's sign-in and picking pages).
+
+const navStack = [];
+
+export function recordNavigation(hash) {
+  const key = hash || '#/';
+  if (navStack[navStack.length - 1] === key) return;
+  if (navStack[navStack.length - 2] === key) navStack.pop();
+  else navStack.push(key);
+}
+
+export function navBack(fallback = '#/') {
+  const previous = navStack[navStack.length - 2];
+  location.hash = previous || fallback;
+}
+
 // ---------- Platform ----------
 
 export function isStandalone() {

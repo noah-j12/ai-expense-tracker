@@ -4,7 +4,7 @@
 import { listEntries, markExcelSynced } from '../entries.js';
 import { deliverFiles, inspectWorkbook, typeOfField, updateExcelWorkbook } from '../exporter.js';
 import { ID_HEADER, fieldLabel } from '../fields.js';
-import { cleanLayout, columnMapper, extraColumnsPicker, learnedFromRows, offerLearnedLists, suggestMapping } from '../mapper.js';
+import { cleanLayout, columnMapper, extraColumnsPicker, learnedFromRows, mergeLearnedLists, pickTab, planLayout, suggestMapping } from '../mapper.js';
 import { settings, updateSettings } from '../settings.js';
 import { defaultSheetColumns, sheetsConnected } from '../sheets.js';
 import { confirmSheet, toast, topbar } from '../ui.js';
@@ -43,14 +43,35 @@ export function ExcelSettings() {
   const spinner = (text) => h('div', { class: 'card processing' }, h('span', { class: 'spinner' }), h('div', null, text));
   const back = (step) => () => { flow.step = step; render(); };
 
-  async function startWithFile(file) {
+  // auto: read the workbook and set everything up (tab, columns, lists) with no questions,
+  // unless two tabs look equally likely. Otherwise show the tab list.
+  async function startWithFile(file, { auto = true } = {}) {
     if (!file) return;
     flow.busy = 'Opening your workbook…';
     render();
     try {
       flow.file = file;
       flow.tabs = await inspectWorkbook(file);
+      flow.note = '';
       flow.step = 'tabs';
+      if (auto) {
+        const choice = pickTab(flow.tabs);
+        if (choice.ambiguous) {
+          flow.note = 'More than one tab looks like an expense log. Which one should expenses go into?';
+        } else {
+          flow.busy = 'Matching your columns…';
+          render();
+          const plan = await planLayout(choice.tab, { allowReceipt: sheetsConnected() });
+          flow.tab = choice.tab.name;
+          flow.headers = plan.headers;
+          flow.rows = plan.rows;
+          flow.mapping = plan.mapping;
+          flow.summary = { tab: choice.tab.name, matched: plan.matched, added: plan.added, empty: choice.empty };
+          flow.busy = '';
+          await saveLayout(plan.columns.map((c) => (plan.added.includes(c) ? { ...c, add: true } : c)));
+          return;
+        }
+      }
     } catch (err) {
       toast(err.message, { error: true });
     } finally {
@@ -88,7 +109,7 @@ export function ExcelSettings() {
   }
 
   async function saveLayout(columns) {
-    await offerLearnedLists(learnedFromRows(flow.headers, flow.rows, flow.mapping), 'workbook');
+    flow.learned = await mergeLearnedLists(learnedFromRows(flow.headers, flow.rows, flow.mapping));
     await updateSettings((d) => { d.excel = { fileName: flow.file?.name || d.excel.fileName, tab: flow.tab, columns, lastUpdated: d.excel.lastUpdated }; });
     if (flow.file) await runUpdate(flow.file);
   }
@@ -150,11 +171,11 @@ export function ExcelSettings() {
         h('button', { class: 'btn', onclick: async () => {
           const f = await pickWorkbook();
           if (!f) return;
-          await startWithFile(f);
+          await startWithFile(f, { auto: false });
           const tab = flow.tabs.find((t) => t.name === settings().excel.tab);
           if (tab) await chooseTab(tab);
         } }, icon('pen'), 'Change columns'),
-        h('button', { class: 'btn', onclick: async () => startWithFile(await pickWorkbook()) }, icon('file'), 'Use a different file or tab'),
+        h('button', { class: 'btn', onclick: async () => startWithFile(await pickWorkbook(), { auto: false }) }, icon('file'), 'Use a different file or tab'),
         h('p', { class: 'tiny muted' }, 'Expenses you delete in the app aren\'t removed from the workbook; delete those rows in Excel.'),
         h('button', { class: 'btn danger', onclick: async () => {
           if (!(await confirmSheet({ title: 'Stop using an Excel file?', message: 'Your workbook keeps everything already in it.', confirmText: 'Turn off', danger: true }))) return;
@@ -171,7 +192,7 @@ export function ExcelSettings() {
     for (let i = 2; names.has(newName); i++) newName = `Expenses ${i}`;
     return [
       topbar({ title: 'Pick a tab', back: back(null) }),
-      h('p', { class: 'muted', style: { margin: '0 4px 12px' } }, `Which tab in "${flow.file?.name}" should expenses go into?`),
+      h('p', { class: 'muted', style: { margin: '0 4px 12px' } }, flow.note || `Which tab in "${flow.file?.name}" should expenses go into?`),
       h('div', { class: 'list' },
         flow.tabs.map((t) => {
           const cols = t.headers.filter((x) => x && x !== ID_HEADER).length;
@@ -190,9 +211,9 @@ export function ExcelSettings() {
     const extras = extraColumnsPicker(flow.mapping, { allowReceipt: sheetsConnected() });
     return [
       topbar({ title: 'Match your columns', back: back('tabs') }),
-      h('p', { class: 'muted', style: { margin: '0 4px 12px' } }, `Here's what the app will put in each column of "${flow.tab}". Columns set to "Leave blank" are never touched.`),
+      h('p', { class: 'muted', style: { margin: '0 4px 12px' } }, `Your columns in "${flow.tab}" are matched below, and any it's missing are added for you. Check it over and tap Save. Columns set to "Leave blank" are never touched.`),
       columnMapper({ headers: flow.headers, samples: flow.rows, mapping: flow.mapping, onChange: () => extras.refresh() }),
-      h('div', { class: 'section-title' }, 'Add columns your workbook doesn\'t have (optional)'),
+      h('div', { class: 'section-title' }, 'Columns that will be added (tap to skip any)'),
       extras.el,
       h('button', { class: 'btn primary block', style: { marginTop: '20px' }, onclick: () => saveLayout([
         ...flow.headers.map((header, i) => ({ header, field: flow.mapping[i] || '' })),
@@ -210,6 +231,12 @@ export function ExcelSettings() {
       topbar({ title: 'Save your workbook', back: back(null) }),
       h('div', { class: 'banner ok' }, icon('check'), h('div', { class: 'body' }, h('b', null, parts.length ? parts.join(', ') + '.' : 'Your workbook is already up to date.'),
         h('div', null, `In the "${settings().excel.tab}" tab of ${r.file.name}.`))),
+      flow.summary ? h('div', { class: 'card pad stack', style: { marginTop: '12px' } },
+        h('b', null, 'Set up automatically'),
+        flow.summary.matched.length ? h('p', { class: 'small' }, h('b', null, 'Your columns: '), flow.summary.matched.map((c) => c.header).join(', ')) : null,
+        flow.summary.added.length ? h('p', { class: 'small' }, h('b', null, flow.summary.empty ? 'Columns created: ' : 'Columns added: '), flow.summary.added.map((c) => c.header).join(', ')) : null,
+        flow.learned ? h('p', { class: 'small' }, h('b', null, 'Lists: '), flow.learned.charAt(0).toUpperCase() + flow.learned.slice(1), '.') : null,
+        h('p', { class: 'tiny muted' }, 'Want it different? Use Change columns on the Excel settings page.')) : null,
       r.missingHeaders.length ? h('div', { class: 'banner warn' }, icon('alert'), h('div', { class: 'body' }, `These columns weren't found, so they were skipped: ${r.missingHeaders.join(', ')}. If you renamed them, use "Change columns".`)) : null,
       h('div', { class: 'card pad stack' }, excelSaveSteps()),
       h('button', { class: 'btn primary block', style: { marginTop: '16px' }, onclick: saveFile }, icon('download'), 'Save file'),

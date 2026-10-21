@@ -6,7 +6,7 @@ import { kick, queueState } from '../queue.js';
 import { CURRENCIES, businessName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
 import { sheetsConnected } from '../sheets.js';
 import { choiceSheet, confirmSheet, field, imageViewer, promptSheet, toast, topbar } from '../ui.js';
-import { debounce, formatDateTime, formatMoney, fill, h, icon, on, round2 } from '../util.js';
+import { debounce, formatDateTime, formatMoney, fill, h, icon, navBack, on, round2 } from '../util.js';
 
 const NEW_OPTION = '__new__';
 
@@ -20,8 +20,7 @@ function amountText(n) {
 }
 
 function goBack() {
-  if (history.length > 1) history.back();
-  else location.hash = '#/';
+  navBack('#/');
 }
 
 export function EntryView({ params, query }) {

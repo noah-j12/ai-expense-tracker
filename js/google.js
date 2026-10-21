@@ -118,8 +118,9 @@ async function api(url, { method = 'GET', json, body, headers = {} } = {}, retri
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     const msg = data.error?.message || `error ${res.status}`;
+    console.warn('Google API error', res.status, url, msg);
     if (res.status === 403 || res.status === 404) {
-      throw new GoogleError('The app can\'t open that spreadsheet anymore. Choose it again in Settings → Google Sheets.');
+      throw new GoogleError(`The app can't open that spreadsheet (Google said: ${msg}). Try choosing it again in Settings → Google Sheets.`);
     }
     throw new GoogleError(`Google Sheets: ${msg}`);
   }

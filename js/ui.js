@@ -1,8 +1,8 @@
 // Shared UI pieces: toasts, bottom sheets, confirm/prompt dialogs, list editors, image viewer.
 
-import { h, icon } from './util.js';
+import { h, icon, navBack } from './util.js';
 
-export function toast(message, { error = false, ms = 2600 } = {}) {
+export function toast(message, { error = false, ms = error ? 7000 : 2600 } = {}) {
   const root = document.getElementById('toast-root');
   const el = h('div', { class: 'toast' + (error ? ' error' : ''), role: 'status' }, icon(error ? 'alert' : 'check'), message);
   root.append(el);
@@ -186,7 +186,7 @@ export function imageViewer(url) {
 
 export function topbar({ title, back, actions = [] }) {
   return h('header', { class: 'topbar' },
-    back ? h('button', { class: 'icon-btn', 'aria-label': 'Back', onclick: () => (typeof back === 'function' ? back() : history.back()) }, icon('back')) : null,
+    back ? h('button', { class: 'icon-btn', 'aria-label': 'Back', onclick: () => (typeof back === 'function' ? back() : navBack()) }, icon('back')) : null,
     h('h1', { class: back ? 'title-center' : '' }, title),
     ...actions,
     back && !actions.length ? h('span', { style: { width: '44px' } }) : null,

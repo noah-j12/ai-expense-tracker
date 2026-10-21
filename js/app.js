@@ -1,6 +1,6 @@
 import { loadSettings, settings } from './settings.js';
 import { startQueue } from './queue.js';
-import { h, icon, isStandalone } from './util.js';
+import { h, icon, isStandalone, recordNavigation } from './util.js';
 import { InstallView, installRequired } from './views/install.js';
 import { HomeView } from './views/home.js';
 import { EntryView } from './views/entry.js';
@@ -27,6 +27,7 @@ function parseHash() {
 
 async function render() {
   const { path, query } = parseHash();
+  recordNavigation(location.hash);
   if (!settings().setupDone && path !== '/setup') {
     location.replace('#/setup');
     return;

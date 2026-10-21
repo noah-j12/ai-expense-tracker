@@ -7,17 +7,16 @@ import { CURRENCIES, DATE_FORMATS, allExportFormats, exportFormatName, settings,
 import { sheetsConnected, sheetsLinked } from '../sheets.js';
 import { voiceChooser } from './voice-setup.js';
 import { choiceList, choiceSheet, confirmSheet, field, nameListEditor, promptSheet, toast, toggleRow, topbar } from '../ui.js';
-import { fill, h, icon, on, uid } from '../util.js';
+import { fill, h, icon, navBack, on, uid } from '../util.js';
 import { ExcelSettings } from './excel-setup.js';
 import { FormatsView } from './formats.js';
 import { SheetsSettings } from './sheets-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.6.4';
+export const APP_VERSION = '1.7.0';
 
 export function goBack(fallback = '#/settings') {
-  if (history.length > 1) history.back();
-  else location.hash = fallback;
+  navBack(fallback);
 }
 
 function navItem({ iconName, label, value, href, onclick }) {

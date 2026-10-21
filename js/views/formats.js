@@ -1,6 +1,6 @@
 // Export formats: the built-in ones plus custom layouts copied from the user's own spreadsheet.
 
-import { cleanLayout, columnMapper, learnedFromRows, offerLearnedLists, suggestMapping } from '../mapper.js';
+import { cleanLayout, columnMapper, learnedFromRows, mergeLearnedLists, suggestMapping } from '../mapper.js';
 import { EXPORT_FORMATS, settings, updateSettings } from '../settings.js';
 import { readTableFile, tableFromText } from '../tabular.js';
 import { choiceSheet, confirmSheet, field, toast, topbar } from '../ui.js';
@@ -108,7 +108,7 @@ function editor(templateId, query) {
         toast('Match at least one column first.', { error: true });
         return;
       }
-      if (state.fromFile) await offerLearnedLists(learnedFromRows(state.headers, state.rows, state.mapping), 'spreadsheet');
+      if (state.fromFile) await mergeLearnedLists(learnedFromRows(state.headers, state.rows, state.mapping));
       const id = existing?.id || uid();
       await updateSettings((d) => {
         const t = { id, name, columns };
