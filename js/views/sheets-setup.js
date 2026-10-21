@@ -11,6 +11,8 @@ import {
 import { confirmSheet, field, toast, topbar } from '../ui.js';
 import { fill, formatDateTime, h, icon, on, randomSecret } from '../util.js';
 import { goBack } from './settings.js';
+import { googleConfigured, pickerConfigured } from '../google-config.js';
+import { createSpreadsheet, pickSpreadsheet, pollDeviceAuth, signOutGoogle, spreadsheetInfo, startDeviceAuth } from '../google.js';
 
 const STEPS = [
   'On a computer, open sheets.new to create a new Google Sheet, or open the sheet you already use.',
@@ -23,8 +25,10 @@ const STEPS = [
 
 export function SheetsSettings() {
   const el = h('div', { class: 'page' });
-  // step: null (overview) | 'tabs' | 'map'
-  const flow = { step: null, info: null, tab: '', headers: [], rows: [], mapping: [], busy: '' };
+  // step: null (overview) | 'script' | 'device' | 'choose' | 'tabs' | 'map'
+  const flow = { step: null, info: null, tab: '', headers: [], rows: [], mapping: [], busy: '', device: null, deviceError: '' };
+  let pollTimer = null;
+  const google = () => settings().sheets.mode === 'google';
 
   const spinner = (text) => h('div', { class: 'card processing' }, h('span', { class: 'spinner' }), h('div', null, text));
 
@@ -32,7 +36,7 @@ export function SheetsSettings() {
     flow.busy = 'Reading your sheet…';
     render();
     try {
-      flow.info = await sheetsInfo();
+      flow.info = google() ? await spreadsheetInfo(settings().sheets.google.spreadsheetId) : await sheetsInfo();
       flow.step = 'tabs';
     } catch (err) {
       toast(err.message, { error: true });
@@ -148,7 +152,7 @@ export function SheetsSettings() {
       fill(status, h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Connecting…'));
       try {
         const info = await sheetsInfo(value, secret);
-        await updateSettings((d) => { d.sheets = { ...d.sheets, url: value, secret, connectedName: info.name || '', tab: '', columns: [] }; });
+        await updateSettings((d) => { d.sheets = { ...d.sheets, mode: 'script', url: value, secret, connectedName: info.name || '', tab: '', columns: [] }; });
         flow.info = info;
         flow.step = 'tabs';
         render();
@@ -158,9 +162,11 @@ export function SheetsSettings() {
     };
 
     return [
-      topbar({ title: 'Google Sheets', back: () => goBack() }),
+      topbar({ title: 'Google Sheets', back: googleConfigured() ? () => { flow.step = null; render(); } : () => goBack() }),
       h('div', { class: 'stack' },
-        h('p', { class: 'muted' }, 'Connect a Google Sheet, new or one you already use, and every expense is added automatically, with receipt photos saved to your Google Drive. Your existing columns and rows are kept. It takes about 5 minutes on a computer, once.'),
+        h('p', { class: 'muted' }, googleConfigured()
+          ? 'The script method works with any sheet, including ones shared with you. It\'s set up once, on a computer.'
+          : 'Connect a Google Sheet, new or one you already use, and every expense is added automatically, with receipt photos saved to your Google Drive. Your existing columns and rows are kept. It takes about 5 minutes on a computer, once.'),
         h('div', { class: 'card pad stack' }, h('ol', { class: 'steps' }, STEPS.map((t) => h('li', null, h('div', null, t))))),
         h('div', { class: 'field' }, h('div', { class: 'label' }, 'The script'), h('pre', { class: 'code' }, code)),
         h('div', { class: 'btn-row' },
@@ -171,6 +177,147 @@ export function SheetsSettings() {
         h('button', { class: 'btn primary', onclick: connect }, 'Connect'),
         status,
         h('p', { class: 'tiny muted' }, 'The script contains a private connection code only this phone knows, so nobody else can add rows to your sheet.'),
+      ),
+    ];
+  }
+
+  // ---------- Connect with Google ----------
+
+  function overview() {
+    return [
+      topbar({ title: 'Google Sheets', back: () => goBack() }),
+      h('div', { class: 'stack' },
+        h('p', { class: 'muted' }, 'Every expense is added to a Google Sheet automatically, with receipt photos saved to your Google Drive. Set up takes a minute, right here on your phone.'),
+        h('button', { class: 'btn primary', onclick: startConnect }, icon('sheet'), 'Connect with Google'),
+        h('p', { class: 'tiny muted' }, 'The app only gets access to the spreadsheet it creates or the one you choose, and its receipts folder. Nothing else in your Google account.'),
+        h('div', { class: 'spacer' }),
+        h('button', { class: 'btn ghost small', onclick: () => { flow.step = 'script'; render(); } }, 'Set up with a script instead (for sheets shared with you)'),
+      ),
+    ];
+  }
+
+  function stopPolling() {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+
+  async function startConnect() {
+    flow.deviceError = '';
+    flow.busy = 'Getting a sign-in code…';
+    render();
+    try {
+      flow.device = await startDeviceAuth();
+      flow.step = 'device';
+      schedulePoll(flow.device.interval);
+    } catch (err) {
+      toast(err.message, { error: true });
+    } finally {
+      flow.busy = '';
+      render();
+    }
+  }
+
+  function schedulePoll(seconds) {
+    stopPolling();
+    pollTimer = setTimeout(poll, seconds * 1000);
+  }
+
+  async function poll() {
+    const d = flow.device;
+    if (!d || flow.step !== 'device') return;
+    if (Date.now() > d.expiresAt) {
+      flow.deviceError = 'That code expired. Tap "Get a new code".';
+      return render();
+    }
+    try {
+      const out = await pollDeviceAuth(d.deviceCode);
+      if (out === 'done') {
+        stopPolling();
+        await updateSettings((s) => { s.sheets.mode = 'google'; s.sheets.google.spreadsheetId = ''; s.sheets.tab = ''; s.sheets.columns = []; });
+        flow.step = 'choose';
+        toast('Google connected');
+        return render();
+      }
+      schedulePoll(out === 'slow_down' ? d.interval + 5 : d.interval);
+    } catch (err) {
+      if (err.offline) return schedulePoll(d.interval);
+      flow.deviceError = err.message;
+      render();
+    }
+  }
+
+  function deviceStep() {
+    const d = flow.device;
+    const copyCode = async () => {
+      try {
+        await navigator.clipboard.writeText(d.userCode);
+        toast('Code copied');
+      } catch { /* the code is on screen to type */ }
+    };
+    return [
+      topbar({ title: 'Connect with Google', back: () => { stopPolling(); flow.step = null; render(); } }),
+      h('div', { class: 'stack' },
+        h('ol', { class: 'steps' },
+          h('li', null, h('div', null, 'Copy this code:'), null),
+          h('li', null, h('div', null, 'Tap ', h('b', null, 'Open Google'), ', sign in if asked, and paste the code.')),
+          h('li', null, h('div', null, 'Tap ', h('b', null, 'Allow'), ', then come back here. This screen updates by itself.'))),
+        h('div', { class: 'card pad center' },
+          h('div', { class: 'num', style: { fontSize: '30px', fontWeight: 750, letterSpacing: '.08em' } }, d.userCode),
+          h('div', { class: 'spacer' }),
+          h('button', { class: 'btn small', onclick: copyCode }, 'Copy code')),
+        h('a', { class: 'btn primary', href: d.verificationUrl, target: '_blank', rel: 'noopener', onclick: copyCode }, 'Open Google'),
+        flow.deviceError
+          ? h('div', { class: 'banner warn' }, icon('alert'), h('div', { class: 'body' }, flow.deviceError,
+            h('div', null, h('button', { class: 'btn small', onclick: startConnect }, 'Get a new code'))))
+          : h('div', { class: 'row small muted', style: { justifyContent: 'center' } }, h('span', { class: 'spinner' }), 'Waiting for you to allow access…'),
+      ),
+    ];
+  }
+
+  async function createNew(nameInput) {
+    const name = nameInput.value.trim() || 'Expenses';
+    flow.busy = 'Creating your sheet…';
+    render();
+    try {
+      const columns = defaultSheetColumns();
+      const out = await createSpreadsheet(name, 'Expenses', columns.map((c) => c.header));
+      await updateSettings((d) => { d.sheets.google.spreadsheetId = out.spreadsheetId; d.sheets.connectedName = out.name; });
+      flow.busy = '';
+      await saveLayout('Expenses', columns);
+    } catch (err) {
+      toast(err.message, { error: true });
+    } finally {
+      flow.busy = '';
+      render();
+    }
+  }
+
+  async function chooseExisting() {
+    try {
+      const picked = await pickSpreadsheet();
+      if (!picked) return;
+      await updateSettings((d) => { d.sheets.google.spreadsheetId = picked.id; d.sheets.connectedName = picked.name; });
+      await loadInfo();
+    } catch (err) {
+      toast(err.message, { error: true });
+    }
+  }
+
+  function chooseStep() {
+    const nameInput = h('input', { class: 'input', value: 'Expenses', autocapitalize: 'words' });
+    return [
+      topbar({ title: 'Which sheet?', back: () => goBack() }),
+      h('div', { class: 'stack' },
+        h('div', { class: 'card pad stack' },
+          h('b', null, 'Start a new Google Sheet'),
+          field('Name', nameInput),
+          h('button', { class: 'btn primary', onclick: () => createNew(nameInput) }, icon('plus'), 'Create it')),
+        pickerConfigured()
+          ? h('div', { class: 'card pad stack' },
+            h('b', null, 'Use a sheet you already have'),
+            h('p', { class: 'small muted' }, 'Your existing columns and rows are kept; new expenses are added below.'),
+            h('button', { class: 'btn', onclick: chooseExisting }, icon('sheet'), 'Choose from my Google Drive'))
+          : null,
       ),
     ];
   }
@@ -230,6 +377,7 @@ export function SheetsSettings() {
           if (tab) await chooseTab(tab);
         } }, icon('pen'), 'Change columns'),
         h('button', { class: 'btn', onclick: loadInfo }, icon('sheet'), 'Use a different tab'),
+        google() ? h('button', { class: 'btn', onclick: () => { flow.step = 'choose'; render(); } }, icon('file'), 'Use a different spreadsheet') : null,
         h('button', { class: 'btn', onclick: async () => { await syncSheets(); toast(sheetsState.error ? 'Sync had a problem' : 'Synced', { error: Boolean(sheetsState.error) }); } }, icon('refresh'), 'Sync now'),
         h('button', { class: 'btn', onclick: async () => {
           if (!(await confirmSheet({ title: 'Send everything again?', message: 'Every expense on this phone is re-sent. Rows already in the sheet are updated, missing ones are added back.', confirmText: 'Send' }))) return;
@@ -238,7 +386,8 @@ export function SheetsSettings() {
         } }, 'Re-send all expenses'),
         h('button', { class: 'btn danger', onclick: async () => {
           if (!(await confirmSheet({ title: 'Disconnect Google Sheets?', message: 'Your sheet keeps everything already in it. New expenses will only be saved on this phone.', confirmText: 'Disconnect', danger: true }))) return;
-          await updateSettings((d) => { d.sheets = { url: '', secret: '', connectedName: '', tab: '', columns: [] }; });
+          if (google()) await signOutGoogle();
+          await updateSettings(resetSheets);
         } }, 'Disconnect'),
       ),
     ];
@@ -246,9 +395,14 @@ export function SheetsSettings() {
 
   function render() {
     if (flow.busy) return fill(el, topbar({ title: 'Google Sheets', back: () => goBack() }), spinner(flow.busy));
+    if (flow.step === 'device') return fill(el, ...deviceStep());
+    if (flow.step === 'choose') return fill(el, ...chooseStep());
     if (flow.step === 'tabs') return fill(el, ...tabsStep());
     if (flow.step === 'map') return fill(el, ...mapStep());
+    if (flow.step === 'script') return fill(el, ...instructions());
     if (sheetsConnected()) return fill(el, ...connected());
+    // Signed in with Google but no spreadsheet chosen yet.
+    if (google() && sheetsLinked() && !settings().sheets.google.spreadsheetId) return fill(el, ...chooseStep());
     if (sheetsLinked()) {
       // Script connected but no tab picked yet (e.g. they left mid-setup). Try once automatically.
       if (!flow.autoTried) {
@@ -260,12 +414,31 @@ export function SheetsSettings() {
         h('div', { class: 'banner warn' }, icon('alert'), h('div', { class: 'body' }, 'Your sheet is connected, but its tabs couldn\'t be read just now.')),
         h('div', { class: 'stack' },
           h('button', { class: 'btn primary', onclick: loadInfo }, icon('refresh'), 'Try again'),
-          h('button', { class: 'btn', onclick: () => updateSettings((d) => { d.sheets = { ...d.sheets, url: '', secret: '', tab: '', columns: [] }; }).then(render) }, 'Start over')));
+          h('button', { class: 'btn', onclick: () => updateSettings(resetSheets).then(render) }, 'Start over')));
     }
-    return fill(el, ...instructions());
+    return fill(el, ...(googleConfigured() ? overview() : instructions()));
   }
 
   render();
   const offs = [on('sheets-changed', () => { if (!flow.step && !flow.busy && sheetsConnected()) render(); })];
-  return { el, destroy: () => offs.forEach((off) => off()) };
+  // Coming back from the Google page: check right away instead of waiting for the next poll.
+  const onVisible = () => { if (document.visibilityState === 'visible' && flow.step === 'device' && !flow.deviceError) schedulePoll(0.3); };
+  document.addEventListener('visibilitychange', onVisible);
+  return {
+    el,
+    destroy: () => {
+      offs.forEach((off) => off());
+      stopPolling();
+      document.removeEventListener('visibilitychange', onVisible);
+    },
+  };
+}
+
+// Back to "not connected", keeping the script's connection code so a pasted script still matches.
+function resetSheets(d) {
+  d.sheets = {
+    mode: 'script', url: '', secret: '', connectedName: '', tab: '', columns: [],
+    google: { refreshToken: '', spreadsheetId: '', folderId: '' },
+    pendingSecret: d.sheets.pendingSecret,
+  };
 }

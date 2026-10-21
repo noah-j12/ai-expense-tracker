@@ -13,7 +13,7 @@ import { FormatsView } from './formats.js';
 import { SheetsSettings } from './sheets-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 
 export function goBack(fallback = '#/settings') {
   if (history.length > 1) history.back();

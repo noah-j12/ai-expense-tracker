@@ -17,7 +17,7 @@ A phone web app for logging expenses: snap a receipt, upload a photo or PDF, or 
 
 | Destination | How it works |
 |---|---|
-| **Google Sheets** | Live and automatic. The user pastes a small Apps Script (shown in the app) into their own sheet and deploys it as a web app. Works with a new tab or an existing one: the app reads the header row, matches columns (rules + AI), keeps existing rows and formatting, and adds a hidden "AI Expense Tracker ID" column automatically so edits and deletes update the right row. Receipt photos go to a Drive folder. |
+| **Google Sheets** | Live and automatic. **Connect with Google** (needs the one-time registration in [GOOGLE-SETUP.md](GOOGLE-SETUP.md)): set up on the phone with a sign-in code and a normal Google permission screen. It uses only Google's non-sensitive `drive.file` permission, so there's no "unverified app" warning and no Google review, and the device-code sign-in gives a lasting connection. It can create a new sheet or use an existing one chosen with Google's file picker. **Script method** (backup, works with sheets shared with you): paste a small Apps Script on a computer. Either way, the app reads the header row, matches columns (rules + AI), keeps existing rows and formatting, and adds a hidden "AI Expense Tracker ID" column automatically so edits and deletes update the right row. Receipt photos go to a Drive folder. |
 | **Excel** | The user picks their workbook from the Files app (OneDrive, iCloud Drive, or on the phone) and a tab. The app matches columns, adds new expenses below the existing rows (copying the formatting, filling formulas like running totals down, extending Excel Tables), updates expenses edited in the app, and hands the file back to save over the original. Same hidden ID column. A brand-new workbook can be started too. No Microsoft login: live Excel sync isn't practical for a backend-free app (Microsoft's workbook API doesn't support personal OneDrive, and browser sign-ins expire every 24 hours). |
 | **QuickBooks Online / Xero / Wave** | Export a CSV in each one's bank-import format (spending as negative amounts). |
 | **Spreadsheet / accountant** | Export a standard spreadsheet as Excel (.xlsx) or CSV. |
@@ -72,7 +72,8 @@ Then open http://localhost:8000 in Chrome or Edge with the device toolbar for a 
 | `js/exporter.js` | Export files, Excel workbook updates, receipt sharing, backup & restore |
 | `js/xlsx.js`, `js/zip.js` | Reading, creating and editing Excel files (no library) |
 | `js/tabular.js` | Reading a layout from CSV, Excel or pasted text |
-| `js/sheets.js` | Google Sheets sync and the Apps Script |
+| `js/sheets.js` | Google Sheets sync (both methods) and the Apps Script |
+| `js/google.js`, `js/google-config.js` | "Connect with Google": device-code sign-in, Sheets/Drive API calls, file picker; registration values |
 | `js/capture.js`, `js/image.js` | Camera, upload, voice/typed input, photo shrinking |
 | `js/speech.js`, `js/talk.js` | Voice conversations: recording with pause detection, transcription, spoken replies, the conversation screen |
 | `js/views/` | Screens: home, entry, export, settings, setup, Google Sheets, Excel, export formats |

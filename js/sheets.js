@@ -8,6 +8,7 @@ import { ID_HEADER, fieldValue } from './fields.js';
 import { hasMultipleBusinesses, settings } from './settings.js';
 import { getEntry, hasReceipt, listEntries } from './entries.js';
 import { blobToBase64, emit, safeFileName } from './util.js';
+import { googleDelete, googleUpsert, prepareGoogleTab, spreadsheetInfo, uploadReceipt } from './google.js';
 
 export const SCRIPT_VERSION = 2;
 export const sheetsState = { error: '', lastSync: null };
@@ -20,15 +21,17 @@ export function defaultSheetColumns() {
   ].map(([header, field]) => ({ header, field }));
 }
 
-// Signed in to a script but no tab/columns chosen yet.
+const usingGoogle = () => settings().sheets.mode === 'google';
+
+// Signed in (Google) or script connected, but maybe no sheet/tab/columns chosen yet.
 export function sheetsLinked() {
   const s = settings().sheets;
-  return Boolean(s.url && s.secret);
+  return usingGoogle() ? Boolean(s.google?.refreshToken) : Boolean(s.url && s.secret);
 }
 
 export function sheetsConnected() {
   const s = settings().sheets;
-  return sheetsLinked() && Boolean(s.tab) && s.columns.some((c) => c.field);
+  return sheetsLinked() && (!usingGoogle() || Boolean(s.google.spreadsheetId)) && Boolean(s.tab) && s.columns.some((c) => c.field);
 }
 
 async function call(payload, url = settings().sheets.url, secret = settings().sheets.secret) {
@@ -70,11 +73,22 @@ export async function sheetsInfo(url = settings().sheets.url, secret = settings(
 }
 
 export async function prepareTab({ tab, headers, addHeaders }) {
+  if (usingGoogle()) return prepareGoogleTab({ spreadsheetId: settings().sheets.google.spreadsheetId, tab, headers, addHeaders });
   return call({ action: 'setup', tab, headers, addHeaders });
 }
 
 export async function distinctValues(tab, headers) {
   if (!headers.length) return {};
+  if (usingGoogle()) {
+    const info = await spreadsheetInfo(settings().sheets.google.spreadsheetId);
+    const t = info.tabs.find((x) => x.name === tab);
+    const out = {};
+    for (const h of headers) {
+      const i = t ? t.headers.indexOf(h) : -1;
+      out[h] = i < 0 ? [] : [...new Set(t.allRows.map((r) => String(r[i] ?? '').trim()).filter(Boolean))];
+    }
+    return out;
+  }
   return (await call({ action: 'distinct', tab, headers })).values || {};
 }
 
@@ -93,9 +107,12 @@ export async function syncSheets() {
   const receiptHeader = mapped.find((c) => c.field === 'receipt')?.header || null;
   const dateHeaders = mapped.filter((c) => c.field === 'date').map((c) => c.header);
   try {
+    const google = usingGoogle();
+    const spreadsheetId = settings().sheets.google?.spreadsheetId;
     const deletes = (await kvGet('sheetDeletes')) || [];
     if (deletes.length) {
-      await call({ action: 'delete', tab, ids: deletes });
+      if (google) await googleDelete({ spreadsheetId, tab, ids: deletes, idHeader: ID_HEADER });
+      else await call({ action: 'delete', tab, ids: deletes });
       await kvSet('sheetDeletes', []);
     }
 
@@ -107,27 +124,52 @@ export async function syncSheets() {
       .filter((e) => e.sheet?.dirty && (e.aiStatus === 'done' || e.aiStatus === 'skipped'))
       .sort((a, b) => a.fields.date.localeCompare(b.fields.date) || a.createdAt - b.createdAt);
 
-    for (const e of dirty) {
-      const values = {};
-      for (const c of mapped) if (c.field !== 'receipt') values[c.header] = fieldValue(e, c.field, { sheet: true });
-      const item = { id: e.id, values, receiptUrl: e.sheet?.receiptUrl || '' };
-      if (receiptHeader && hasReceipt(e) && !item.receiptUrl) {
-        if (knownUrls.has(e.fileId)) {
-          item.receiptUrl = knownUrls.get(e.fileId);
-        } else {
-          const blob = await getFile(e.fileId);
-          if (blob) item.file = { data: await blobToBase64(blob), type: blob.type, name: receiptName(e, blob.type) };
-        }
-      }
-      const out = await call({ action: 'upsert', tab, dateHeaders, receiptHeader, entries: [item] });
-      const receiptUrl = out.results?.[0]?.receiptUrl || item.receiptUrl || '';
-      if (e.fileId && receiptUrl) knownUrls.set(e.fileId, receiptUrl);
-
-      // Only clear the dirty flag if nothing changed while we were uploading.
+    // Only clear the dirty flag if nothing changed while we were uploading.
+    const markSynced = async (e, receiptUrl) => {
       const latest = await getEntry(e.id);
       if (latest) {
         latest.sheet = { ...latest.sheet, receiptUrl, syncedAt: Date.now(), dirty: latest.updatedAt !== e.updatedAt };
         await putEntry(latest);
+      }
+    };
+    const itemFor = (e) => {
+      const values = {};
+      for (const c of mapped) if (c.field !== 'receipt') values[c.header] = fieldValue(e, c.field, { sheet: true });
+      const receiptUrl = e.sheet?.receiptUrl || (e.fileId && knownUrls.get(e.fileId)) || '';
+      return { id: e.id, values, receiptUrl };
+    };
+
+    if (google) {
+      // Upload any new receipt photos to Drive, then write every row in one batch
+      // (Google limits how many requests an app can make per minute).
+      for (let i = 0; i < dirty.length; i += 100) {
+        const chunk = dirty.slice(i, i + 100);
+        const items = [];
+        for (const e of chunk) {
+          const item = itemFor(e);
+          if (receiptHeader && hasReceipt(e) && !item.receiptUrl) {
+            const blob = await getFile(e.fileId);
+            if (blob) {
+              item.receiptUrl = await uploadReceipt(blob, receiptName(e, blob.type));
+              knownUrls.set(e.fileId, item.receiptUrl);
+            }
+          }
+          items.push(item);
+        }
+        await googleUpsert({ spreadsheetId, tab, items, receiptHeader, idHeader: ID_HEADER });
+        for (let j = 0; j < chunk.length; j++) await markSynced(chunk[j], items[j].receiptUrl);
+      }
+    } else {
+      for (const e of dirty) {
+        const item = itemFor(e);
+        if (receiptHeader && hasReceipt(e) && !item.receiptUrl) {
+          const blob = await getFile(e.fileId);
+          if (blob) item.file = { data: await blobToBase64(blob), type: blob.type, name: receiptName(e, blob.type) };
+        }
+        const out = await call({ action: 'upsert', tab, dateHeaders, receiptHeader, entries: [item] });
+        const receiptUrl = out.results?.[0]?.receiptUrl || item.receiptUrl || '';
+        if (e.fileId && receiptUrl) knownUrls.set(e.fileId, receiptUrl);
+        await markSynced(e, receiptUrl);
       }
     }
     sheetsState.error = '';

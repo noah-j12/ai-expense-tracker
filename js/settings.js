@@ -105,7 +105,8 @@ function defaults() {
     // Optional voice conversations: OpenAI does the speech-to-text (Claude doesn't take audio).
     voice: { openaiKey: '', talkBack: true, pause: 'normal' },
     // Google Sheets: the tab and its columns ({ header, field }) once set up.
-    sheets: { url: '', secret: '', connectedName: '', tab: '', columns: [] },
+    // mode 'google': connected with Google sign-in (no script); 'script': the Apps Script method.
+    sheets: { mode: 'script', url: '', secret: '', connectedName: '', tab: '', columns: [], google: { refreshToken: '', spreadsheetId: '', folderId: '' } },
     // Excel: the workbook tab and columns used by "Update my Excel file".
     excel: { fileName: '', tab: '', columns: [], lastUpdated: null },
     askNoteAfterScan: false,
@@ -118,7 +119,7 @@ export async function loadSettings() {
   const saved = await kvGet('settings');
   const base = defaults();
   current = saved
-    ? { ...base, ...saved, ai: { ...base.ai, ...saved.ai }, sheets: { ...base.sheets, ...saved.sheets }, excel: { ...base.excel, ...saved.excel }, voice: { ...base.voice, ...saved.voice } }
+    ? { ...base, ...saved, ai: { ...base.ai, ...saved.ai }, sheets: { ...base.sheets, ...saved.sheets, google: { ...base.sheets.google, ...saved.sheets?.google } }, excel: { ...base.excel, ...saved.excel }, voice: { ...base.voice, ...saved.voice } }
     : base;
   if (!current.businesses.length) current.businesses = base.businesses;
   if (!current.businesses.some((b) => b.id === current.activeBusinessId)) current.activeBusinessId = current.businesses[0].id;
