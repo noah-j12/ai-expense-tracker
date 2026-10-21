@@ -23,6 +23,8 @@ async function errorDetail(res) {
 const OPENAI = 'https://api.openai.com/v1';
 const MAX_SESSION_MS = 4 * 60_000;
 
+const allowInterrupt = () => settings().voice?.allowInterrupt === true;
+
 function instructions() {
   return `You are the voice of an expense-tracking app. The user is telling you about something they bought so it can be logged for their bookkeeping.
 - Keep every reply short and natural: one sentence, under 20 words.
@@ -65,7 +67,9 @@ async function mintSecret(withTranscription) {
     instructions: instructions(),
     audio: {
       input: {
-        turn_detection: { type: 'semantic_vad' },
+        // Without interrupting, the model's speech is never cut off by what the mic hears (it can hear
+        // itself on the phone's speaker). With headphones, interrupting can be turned on in Settings.
+        turn_detection: { type: 'semantic_vad', interrupt_response: allowInterrupt() },
         // Only for showing the user's words on screen; the conversation works without it.
         ...(withTranscription ? { transcription: { model: LIVE_TRANSCRIBE_MODEL } } : {}),
       },
@@ -109,6 +113,25 @@ export function startLive({ onUseKeyboard }) {
   let dc = null;
   let stream = null;
   let meterRaf = 0;
+  let unmuteTimer = null;
+
+  // While the AI talks, the mic is muted so it can't hear itself through the speaker (which made it stop
+  // mid-sentence and answer its own echo). It comes back on just after the AI finishes, and anything
+  // captured in between is thrown away.
+  function muteMic(on) {
+    if (allowInterrupt()) return;
+    clearTimeout(unmuteTimer);
+    const apply = (enabled) => stream?.getAudioTracks().forEach((t) => { t.enabled = enabled; });
+    if (on) {
+      apply(false);
+      unmuteTimer = setTimeout(() => muteMic(false), 30_000); // never stay muted if an event goes missing
+    } else {
+      unmuteTimer = setTimeout(() => {
+        send({ type: 'input_audio_buffer.clear' });
+        apply(true);
+      }, 400);
+    }
+  }
   let savedCount = 0;
   let finishTimer = null;
   const sessionTimer = setTimeout(() => close(), MAX_SESSION_MS);
@@ -255,9 +278,11 @@ export function startLive({ onUseKeyboard }) {
         bubble('user', ev.transcript?.trim());
         break;
       case 'output_audio_buffer.started':
+        muteMic(true);
         if (root.dataset.phase !== 'done') setPhase('speaking', '');
         break;
       case 'output_audio_buffer.stopped':
+        muteMic(false);
         if (savedCount) finishSoon(600);
         else if (root.dataset.phase !== 'done') setPhase('listening', 'Listening…');
         break;
@@ -339,6 +364,7 @@ export function startLive({ onUseKeyboard }) {
   }
 
   function teardown() {
+    clearTimeout(unmuteTimer);
     cancelAnimationFrame(meterRaf);
     try { dc?.close(); } catch { /* closed */ }
     try { pc?.close(); } catch { /* closed */ }

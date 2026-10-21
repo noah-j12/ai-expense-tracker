@@ -81,6 +81,13 @@ export function voiceChooser({ read, write, model, compact = false }) {
             }),
           })),
         )) : null,
+      selected === 'live' && !pending ? h('div', { class: 'list' },
+        toggleRow({
+          label: 'Let me interrupt it',
+          hint: 'Best with headphones or AirPods. On the phone speaker the mic can hear the AI and cut it off, so this is off by default.',
+          checked: v.allowInterrupt === true,
+          onChange: (on) => write((x) => { x.allowInterrupt = on; }),
+        })) : null,
       selected === 'spoken' && !pending ? h('div', { class: 'list' },
         toggleRow({ label: 'Talk back out loud', hint: 'Off: questions are shown on screen only.', checked: v.talkBack !== false, onChange: (on) => write((x) => { x.talkBack = on; }) }),
         h('button', { class: 'list-item', onclick: async () => {

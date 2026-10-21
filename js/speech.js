@@ -307,7 +307,7 @@ export function askingRules(s = settings()) {
 export const VOICE_MODES = [
   { id: 'keyboard', name: 'Keyboard mic', hint: 'Tap the mic on the keyboard and talk; the app reads what you said. No extra account.' },
   { id: 'spoken', name: 'Voice with spoken replies', hint: 'You talk; it asks any questions out loud in a natural AI voice. Needs an OpenAI key.' },
-  { id: 'live', name: 'Live conversation', hint: 'Like ChatGPT\'s voice mode: instant back-and-forth, and you can interrupt it. Needs an OpenAI key.' },
+  { id: 'live', name: 'Live conversation', hint: 'Like ChatGPT\'s voice mode: natural, instant back-and-forth. Needs an OpenAI key.' },
 ];
 
 // Rough per-entry estimates by AI setting (Claude model), in cents.
