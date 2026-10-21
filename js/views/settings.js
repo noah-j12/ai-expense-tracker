@@ -4,7 +4,7 @@ import { listEntries, updateEntry } from '../entries.js';
 import { backupFile, deliverFiles, restoreBackup } from '../exporter.js';
 import { clearBlocked, kick } from '../queue.js';
 import { CURRENCIES, DATE_FORMATS, allExportFormats, exportFormatName, settings, updateSettings } from '../settings.js';
-import { sheetsConnected } from '../sheets.js';
+import { sheetsConnected, sheetsLinked } from '../sheets.js';
 import { voiceChooser } from './voice-setup.js';
 import { choiceList, choiceSheet, confirmSheet, field, nameListEditor, promptSheet, toast, toggleRow, topbar } from '../ui.js';
 import { fill, h, icon, on, uid } from '../util.js';
@@ -13,7 +13,7 @@ import { FormatsView } from './formats.js';
 import { SheetsSettings } from './sheets-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.6.3';
+export const APP_VERSION = '1.6.4';
 
 export function goBack(fallback = '#/settings') {
   if (history.length > 1) history.back();
@@ -57,7 +57,7 @@ function main() {
       ),
       h('div', { class: 'section-title' }, 'Where your expenses go'),
       h('div', { class: 'list' },
-        navItem({ iconName: 'sheet', label: 'Google Sheets', value: sheetsConnected() ? 'Connected' : 'Off', href: '#/settings/sheets' }),
+        navItem({ iconName: 'sheet', label: 'Google Sheets', value: sheetsConnected() ? 'Connected' : sheetsLinked() ? 'Finish setup' : 'Off', href: '#/settings/sheets' }),
         navItem({ iconName: 'file', label: 'Excel file', value: s.excel.tab ? 'Set up' : 'Off', href: '#/settings/excel' }),
         navItem({ iconName: 'share', label: 'Export formats', value: custom ? `${custom} custom` : null, href: '#/settings/formats' }),
       ),

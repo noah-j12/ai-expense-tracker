@@ -3,7 +3,7 @@ import { kvGet, kvSet } from '../db.js';
 import { displayTitle, entryState, listEntries, needsAttention } from '../entries.js';
 import { queueState } from '../queue.js';
 import { businessName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
-import { sheetsConnected, sheetsState } from '../sheets.js';
+import { sheetsConnected, sheetsLinked, sheetsState } from '../sheets.js';
 import { voiceEnabled, voiceMode } from '../speech.js';
 import { choiceSheet } from '../ui.js';
 import { formatDate, formatMoney, fill, h, icon, isIOS, isStandalone, on, shareGlyph, toISODate } from '../util.js';
@@ -93,6 +93,11 @@ export function HomeView() {
     if (waiting && (queueState.offline || !navigator.onLine) && !queueState.blocked) {
       out.push(h('div', { class: 'banner' }, icon('cloudOff'), h('div', { class: 'body' },
         h('b', null, `${waiting} waiting`), ` to be read. ${waiting === 1 ? 'It' : 'They'}'ll go through when you're back online. Nothing is lost.`)));
+    }
+    if (sheetsLinked() && !sheetsConnected()) {
+      out.push(h('div', { class: 'banner warn' }, icon('sheet'), h('div', { class: 'body' },
+        h('b', null, 'Google Sheets isn\'t finished. '), 'Expenses won\'t go into your sheet until you pick the tab and columns.',
+        h('div', null, h('button', { class: 'btn small', onclick: () => { location.hash = '#/settings/sheets'; } }, 'Finish setup')))));
     }
     if (sheetsConnected() && sheetsState.error) {
       out.push(h('div', { class: 'banner warn' }, icon('sheet'), h('div', { class: 'body' }, h('b', null, 'Google Sheets: '), sheetsState.error,

@@ -334,7 +334,12 @@ export function SheetsSettings({ query } = {}) {
   }
 
   async function useSheet(f) {
-    await updateSettings((d) => { d.sheets.google.spreadsheetId = f.id; d.sheets.connectedName = f.name; });
+    // A different spreadsheet means a different tab and columns; never carry the old ones over.
+    await updateSettings((d) => {
+      if (d.sheets.google.spreadsheetId !== f.id) { d.sheets.tab = ''; d.sheets.columns = []; }
+      d.sheets.google.spreadsheetId = f.id;
+      d.sheets.connectedName = f.name;
+    });
     await loadInfo();
   }
 
