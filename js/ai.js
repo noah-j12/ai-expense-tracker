@@ -4,6 +4,7 @@
 import Anthropic from '../vendor/anthropic-sdk.mjs';
 import { FIELDS } from './fields.js';
 import { settings } from './settings.js';
+import { askingRules } from './speech.js';
 import { blobToBase64, toISODate } from './util.js';
 
 export const MODELS = [
@@ -194,15 +195,19 @@ export async function suggestColumnMapping(headers, samples = []) {
   }
 }
 
-const TALK_RULES = `
+function talkRules() {
+  return `
 
-You are also talking with the user out loud, by voice, to log what they bought. After each thing they say:
-- If you know the amount and roughly what was bought, set done to true and put a short spoken confirmation in "say" (under 15 words, e.g. "Got it, two shovels for $22.49. Saved."). Always mention the amount.
-- Otherwise set done to false and ask ONE short, friendly question in "say" for the most important missing detail: the amount first, then what it was, then where they bought it. Don't ask about the date, category or payment method.
-- Never ask more than two questions in the whole conversation. If they don't know or want to skip, log what you have and set done to true.
+You are also talking with the user out loud, by voice, to log what they bought. What to find out:
+${askingRules()}
+
+After each thing they say:
+- If anything above is still missing (and they haven't said they don't know), set done to false and ask for it in "say": one short, friendly question covering everything missing.
+- Once you have it all, set done to true and put a short spoken confirmation in "say" (under 15 words, e.g. "Got it, two shovels from Home Depot for $22.49. Saved."). Always mention the amount.
 - If they say to cancel or that it was a mistake, set done to true, is_expense to false, and say "Okay, nothing saved."
 - "say" is read aloud: plain conversational words, no lists or symbols other than $ amounts.
 - Always fill in the expense records from everything said so far.`;
+}
 
 // One turn of a spoken conversation. turns: [{ role: 'user'|'assistant', text }], starting with the user.
 // Returns the usual extraction plus { done, say }.
@@ -219,7 +224,7 @@ export async function talkTurn(turns, createdAt) {
     role: t.role,
     content: i === 0 ? `${recordedLine(createdAt)}\nThe user said: "${t.text}"` : t.role === 'user' ? `The user said: "${t.text}"` : t.text,
   }));
-  return structuredCall({ system: buildSystemPrompt(s) + TALK_RULES, messages, schema });
+  return structuredCall({ system: buildSystemPrompt(s) + talkRules(), messages, schema });
 }
 
 async function structuredCall({ system, content, messages, schema }) {

@@ -275,6 +275,33 @@ export function stopSpeaking() {
   playing = null;
 }
 
+// ---------- What the voice modes ask about ----------
+
+export const ASKABLE = [
+  { id: 'vendor', name: 'Store or vendor', phrase: 'where they bought it (store or vendor)' },
+  { id: 'paymentMethod', name: 'How you paid', phrase: 'how they paid' },
+  { id: 'date', name: 'Date', phrase: 'when they bought it' },
+];
+
+// Plain-English rules for the voice AI about which missing details to ask for.
+export function askingRules(s = settings()) {
+  const askFor = s.voice?.askFor || ['vendor', 'paymentMethod'];
+  const asked = ASKABLE.filter((a) => askFor.includes(a.id));
+  const lines = [
+    'You always need the total amount and what was bought.',
+    asked.length ? `Also find out ${asked.map((a) => a.phrase).join(', ')}.` : '',
+    'If any of these are missing from what they said, ask for them. Ask for everything missing in one short, natural question (for example "Where did you get it, and how did you pay?"), then follow up only on what is still missing.',
+    askFor.includes('paymentMethod') && s.paymentMethods?.length
+      ? `When asking how they paid, offer their usual options: ${s.paymentMethods.join(', ')}.`
+      : '',
+    askFor.includes('date') ? '' : 'Assume the purchase was today unless they say otherwise; don\'t ask about the date.',
+    'Never ask about the category; that is worked out automatically.',
+    'If they say they don\'t know, or to skip it, don\'t ask about that detail again.',
+    'People ramble and correct themselves; always use their final answer.',
+  ];
+  return lines.filter(Boolean).map((l) => `- ${l}`).join('\n');
+}
+
 // ---------- Voice options and cost estimates ----------
 
 export const VOICE_MODES = [

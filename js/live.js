@@ -7,7 +7,7 @@ import { AIError, extractExpenses } from './ai.js';
 import { applyAIResult, createEntry, getEntry, updateEntry } from './entries.js';
 import { kick } from './queue.js';
 import { settings } from './settings.js';
-import { MicError, TTS_VOICE, audioContext, prepareAudio, releaseAudio } from './speech.js';
+import { MicError, TTS_VOICE, askingRules, audioContext, prepareAudio, releaseAudio } from './speech.js';
 import { toast } from './ui.js';
 import { fill, formatMoney, h, icon } from './util.js';
 
@@ -23,14 +23,15 @@ async function errorDetail(res) {
 const OPENAI = 'https://api.openai.com/v1';
 const MAX_SESSION_MS = 4 * 60_000;
 
-const INSTRUCTIONS = `You are the voice of an expense-tracking app. The user is telling you about something they bought so it can be logged for their bookkeeping.
-- Keep every reply short and natural: one sentence, under 15 words.
-- You need the amount and what was bought. If they didn't say where, you may ask once. Never ask about the date, category or payment method.
-- Ask at most two questions in total. People ramble and correct themselves; always use their final answer.
-- As soon as you know the amount and roughly what was bought (or they say they don't know), call log_expense. Call it once per separate purchase.
+function instructions() {
+  return `You are the voice of an expense-tracking app. The user is telling you about something they bought so it can be logged for their bookkeeping.
+- Keep every reply short and natural: one sentence, under 20 words.
+${askingRules()}
+- Once you have everything above (or they've said they don't know the rest), call log_expense. Call it once per separate purchase.
 - When log_expense returns, say its "say" text and stop. Don't ask if there's anything else.
 - If they say to cancel or that it was a mistake, say "Okay, nothing saved." and don't call log_expense.
 - Speak the user's language.`;
+}
 
 const TOOL = {
   type: 'function',
@@ -61,7 +62,7 @@ async function mintSecret(withTranscription) {
   const session = {
     type: 'realtime',
     model: LIVE_MODEL,
-    instructions: INSTRUCTIONS,
+    instructions: instructions(),
     audio: {
       input: {
         turn_detection: { type: 'semantic_vad' },

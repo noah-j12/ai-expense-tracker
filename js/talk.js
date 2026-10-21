@@ -8,7 +8,8 @@ import { MicError, prepareAudio, recordTurn, releaseAudio, speak, stopSpeaking, 
 import { toast } from './ui.js';
 import { fill, formatMoney, h, icon } from './util.js';
 
-const MAX_USER_TURNS = 3;
+// A safety stop so a confused conversation can't go on forever; it then logs what it has.
+const MAX_USER_TURNS = 5;
 
 export function startTalk({ onUseKeyboard }) {
   // Must happen during the tap that opened this screen (iOS rule), so the AI voice can play later.

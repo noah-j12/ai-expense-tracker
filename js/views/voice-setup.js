@@ -1,7 +1,7 @@
 // The "How do you want to talk to it?" chooser, shared by setup and Settings → AI.
 // read() returns the voice settings; write(fn) changes them (live settings or the setup draft).
 
-import { PAUSE_OPTIONS, VOICE_MODES, testVoiceKey, voiceCost } from '../speech.js';
+import { ASKABLE, PAUSE_OPTIONS, VOICE_MODES, testVoiceKey, voiceCost } from '../speech.js';
 import { MODELS } from '../ai.js';
 import { choiceList, choiceSheet, field, toggleRow } from '../ui.js';
 import { fill, h, icon } from '../util.js';
@@ -62,6 +62,21 @@ export function voiceChooser({ read, write, model, compact = false }) {
         },
       }),
       pending || (selected !== 'keyboard' && !compact) ? keyCard() : null,
+      selected !== 'keyboard' && !pending ? h('div', { class: 'stack' },
+        h('div', { class: 'section-title', style: { margin: '8px 4px 0' } }, 'If I leave it out, ask me for…'),
+        h('div', { class: 'list' },
+          h('div', { class: 'toggle-row' }, h('div', { class: 'grow' }, h('div', null, 'Amount and what I bought'), h('div', { class: 'tiny muted' }, 'Always asked'))),
+          ASKABLE.map((a) => toggleRow({
+            label: a.name,
+            hint: a.id === 'date' ? 'Off: assumes today unless you say otherwise.' : null,
+            checked: (v.askFor || []).includes(a.id),
+            onChange: (on) => write((x) => {
+              const set = new Set(x.askFor || []);
+              if (on) set.add(a.id); else set.delete(a.id);
+              x.askFor = ASKABLE.map((y) => y.id).filter((id) => set.has(id));
+            }),
+          })),
+        )) : null,
       selected === 'spoken' && !pending ? h('div', { class: 'list' },
         toggleRow({ label: 'Talk back out loud', hint: 'Off: questions are shown on screen only.', checked: v.talkBack !== false, onChange: (on) => write((x) => { x.talkBack = on; }) }),
         h('button', { class: 'list-item', onclick: async () => {
