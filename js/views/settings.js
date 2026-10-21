@@ -1,4 +1,4 @@
-import { MODELS, testApiKey } from '../ai.js';
+﻿import { MODELS, testApiKey } from '../ai.js';
 import { clearEverything } from '../db.js';
 import { listEntries, updateEntry } from '../entries.js';
 import { backupFile, deliverFiles, restoreBackup } from '../exporter.js';
@@ -13,7 +13,7 @@ import { FormatsView } from './formats.js';
 import { SheetsSettings } from './sheets-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.6.2';
+export const APP_VERSION = '1.6.3';
 
 export function goBack(fallback = '#/settings') {
   if (history.length > 1) history.back();
@@ -27,7 +27,7 @@ function navItem({ iconName, label, value, href, onclick }) {
 
 export function SettingsView({ params, query }) {
   const [sub = '', id] = params;
-  if (sub === 'sheets') return SheetsSettings();
+  if (sub === 'sheets') return SheetsSettings({ query });
   if (sub === 'excel') return ExcelSettings({ query });
   if (sub === 'formats') return FormatsView({ id, query });
   const pages = { books, categories, payments, ai, data };
@@ -135,7 +135,7 @@ async function removeBook(b) {
   let moveTo = others[0].id;
   if (affected.length) {
     moveTo = await choiceSheet({
-      title: `Move ${affected.length} expense${affected.length === 1 ? '' : 's'} from ${b.name || 'these books'} to…`,
+      title: `Move ${affected.length} expense${affected.length === 1 ? '' : 's'} from ${b.name || 'these books'} toâ€¦`,
       options: others.map((o) => ({ label: o.name || 'Main books', value: o.id, icon: 'building' })),
     });
     if (!moveTo) return;
@@ -213,7 +213,7 @@ function ai() {
       fill(status, h('span', { class: 'muted' }, 'Key removed.'));
       return;
     }
-    fill(status, h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Checking your key…'));
+    fill(status, h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Checking your keyâ€¦'));
     const res = await testApiKey(key, settings().ai.model);
     if (!res.ok) {
       fill(status, h('span', { style: { color: 'var(--danger)' } }, res.message));
@@ -222,7 +222,7 @@ function ai() {
     await updateSettings((d) => { d.ai.apiKey = key; });
     clearBlocked();
     kick();
-    fill(status, h('span', { style: { color: 'var(--accent)' } }, '✓ Connected. Waiting entries are being read now.'));
+    fill(status, h('span', { style: { color: 'var(--accent)' } }, 'âœ“ Connected. Waiting entries are being read now.'));
   };
 
   const el = h('div', { class: 'page' },
@@ -269,8 +269,8 @@ function voiceSection() {
 
 function data() {
   const el = h('div', { class: 'page' });
-  const storage = h('span', { class: 'value small' }, '…');
-  const count = h('span', { class: 'value small' }, '…');
+  const storage = h('span', { class: 'value small' }, 'â€¦');
+  const count = h('span', { class: 'value small' }, 'â€¦');
   let includeKey = false;
 
   (async () => {

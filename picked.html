@@ -32,7 +32,13 @@
   </main>
   <script>
     const q = new URLSearchParams(location.search);
-    if (q.get('error') || !q.get('picked_file_ids')) {
+    const picked = q.get('picked_file_ids') || '';
+    const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+    // iPhone often opens this page inside the installed app itself; go straight back into the app,
+    // carrying the chosen sheet, instead of leaving people on a dead-end page.
+    if (standalone) {
+      location.replace('./#/settings/sheets' + (picked && !q.get('error') ? '?picked=' + encodeURIComponent(picked.split(',')[0]) : ''));
+    } else if (q.get('error') || !picked) {
       document.getElementById('ok').hidden = true;
       document.getElementById('none').hidden = false;
     }

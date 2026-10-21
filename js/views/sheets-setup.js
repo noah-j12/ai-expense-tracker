@@ -23,7 +23,7 @@ const STEPS = [
   'Copy the Web app URL and paste it into the box on your phone.',
 ];
 
-export function SheetsSettings() {
+export function SheetsSettings({ query } = {}) {
   const el = h('div', { class: 'page' });
   // step: null (overview) | 'script' | 'device' | 'choose' | 'tabs' | 'map'
   const flow = { step: null, info: null, tab: '', headers: [], rows: [], mapping: [], busy: '', device: null, deviceError: '' };
@@ -37,6 +37,9 @@ export function SheetsSettings() {
     render();
     try {
       flow.info = google() ? await spreadsheetInfo(settings().sheets.google.spreadsheetId) : await sheetsInfo();
+      if (google() && flow.info.name && !settings().sheets.connectedName) {
+        await updateSettings((d) => { d.sheets.connectedName = flow.info.name; });
+      }
       flow.step = 'tabs';
     } catch (err) {
       toast(err.message, { error: true });
@@ -488,7 +491,14 @@ export function SheetsSettings() {
     return fill(el, ...(googleConfigured() ? overview() : instructions()));
   }
 
-  render();
+  // Back from Google's picking page with the chosen sheet (see picked.html).
+  const pickedId = query?.get('picked');
+  if (pickedId && google() && sheetsLinked()) {
+    history.replaceState(null, '', '#/settings/sheets');
+    useSheet({ id: pickedId, name: '' }).catch((err) => toast(err.message, { error: true }));
+  } else {
+    render();
+  }
   const offs = [on('sheets-changed', () => { if (!flow.step && !flow.busy && sheetsConnected()) render(); })];
   // Coming back from the Google page: check right away instead of waiting for the next poll.
   const onVisible = () => {
