@@ -8,10 +8,12 @@
 export const GOOGLE = {
   clientId: '964305676640-t40935na6ombct5a74u4f2tn10rmdpv7.apps.googleusercontent.com',
   clientSecret: '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',
-  // For the "choose an existing sheet" picker:
-  apiKey: 'AIzaSyDpC6bVTMQES2TnHx25kpuIoKPNj7Gvvws', // restricted to this site and the Picker API
+  // "Choose a sheet you already have": a Web application client in the same project, used only to open
+  // Google's own file-picking page. Its redirect URI is picked.html. No secret is needed (no code exchange).
+  pickerClientId: '',
   projectNumber: '964305676640',
 };
 
 export const googleConfigured = () => Boolean(GOOGLE.clientId && GOOGLE.clientSecret);
-export const pickerConfigured = () => googleConfigured() && Boolean(GOOGLE.apiKey && GOOGLE.projectNumber);
+export const pickerConfigured = () => googleConfigured() && Boolean(GOOGLE.pickerClientId);
+export const PICKED_PAGE = new URL('picked.html', location.href.split('#')[0]).href;

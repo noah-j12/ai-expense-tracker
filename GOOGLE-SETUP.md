@@ -33,13 +33,12 @@ The app only asks for Google's `drive.file` permission ("files this app creates 
 2. Application type: **TVs and Limited Input devices**. Name: `AI Expense Tracker`. **Create**.
 3. Copy the **Client ID** and **Client secret**.
 
-## 7. Create a key for the "choose an existing sheet" picker
-1. **APIs & Services → Credentials → Create credentials → API key**. Copy it, then click **Edit API key**.
-2. Application restrictions: **Websites** → add `https://noah-j12.github.io/*`.
-3. API restrictions: **Restrict key** → tick **Google Picker API** and **Google Drive API** (the picker uses Drive to list files; without it, it says "The API developer key is invalid") → **Save**.
+## 7. Create the client for "choose a sheet you already have"
+Choosing an existing sheet happens on Google's own page (Google's embedded file picker can't work in iPhone Home Screen apps). That page needs a second, web-type client:
+1. **Clients → Create client**.
+2. Application type: **Web application**. Name: `AI Expense Tracker picker`.
+3. **Authorized redirect URIs → Add URI**: `https://noah-j12.github.io/ai-expense-tracker/picked.html`
+4. **Create**, then copy the **Client ID**. Its secret isn't needed.
 
-## 8. Find the project number
-Cloud console home page → **Project info** card → **Project number**.
-
-## 9. Send Claude the four values
-Client ID, Client secret, API key, Project number. Claude puts them in `js/google-config.js` and publishes. None of them give access to anyone's data. Google designed this client type's "secret" to ship inside apps, and the API key only works from this app's website.
+## 8. Send Claude the values
+The TV client's Client ID and Client secret, and the web client's Client ID. Claude puts them in `js/google-config.js` and publishes. None of them give access to anyone's data. Google designed the TV client's "secret" to ship inside apps, and the web client is only used to open Google's picking page. (The project number is the digits at the start of the Client ID. No API key is needed.)

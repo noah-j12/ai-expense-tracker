@@ -12,7 +12,7 @@ import { confirmSheet, field, toast, topbar } from '../ui.js';
 import { fill, formatDateTime, h, icon, on, randomSecret } from '../util.js';
 import { goBack } from './settings.js';
 import { googleConfigured, pickerConfigured } from '../google-config.js';
-import { createSpreadsheet, pickSpreadsheet, pollDeviceAuth, signOutGoogle, spreadsheetInfo, startDeviceAuth } from '../google.js';
+import { accessibleSheets, createSpreadsheet, onePickUrl, pollDeviceAuth, signOutGoogle, spreadsheetInfo, startDeviceAuth } from '../google.js';
 
 const STEPS = [
   'On a computer, open sheets.new to create a new Google Sheet, or open the sheet you already use.',
@@ -292,18 +292,81 @@ export function SheetsSettings() {
     }
   }
 
-  async function chooseExisting() {
+  // ----- Choosing an existing sheet on Google's own page -----
+
+  // The sheets the app could already open before picking, so a newly picked one stands out.
+  async function prefetchBaseline() {
     try {
-      const picked = await pickSpreadsheet();
-      if (!picked) return;
-      await updateSettings((d) => { d.sheets.google.spreadsheetId = picked.id; d.sheets.connectedName = picked.name; });
-      await loadInfo();
-    } catch (err) {
-      toast(err.message, { error: true });
+      flow.baseline = new Set((await accessibleSheets()).map((f) => f.id));
+    } catch {
+      flow.baseline = null;
     }
   }
 
+  // Must run straight from the tap so the browser lets it open a new page.
+  function openPicker() {
+    window.open(onePickUrl(), '_blank');
+    flow.step = 'picking';
+    render();
+  }
+
+  async function checkPicked() {
+    flow.busy = 'Looking for the sheet you chose…';
+    render();
+    try {
+      const list = await accessibleSheets();
+      const fresh = flow.baseline ? list.filter((f) => !flow.baseline.has(f.id)) : [];
+      if (fresh.length === 1) {
+        flow.busy = '';
+        return useSheet(fresh[0]);
+      }
+      flow.sheetList = list;
+      flow.step = 'list';
+    } catch (err) {
+      toast(err.message, { error: true });
+    } finally {
+      flow.busy = '';
+      if (flow.step !== 'tabs' && flow.step !== 'map') render();
+    }
+  }
+
+  async function useSheet(f) {
+    await updateSettings((d) => { d.sheets.google.spreadsheetId = f.id; d.sheets.connectedName = f.name; });
+    await loadInfo();
+  }
+
+  function pickingStep() {
+    return [
+      topbar({ title: 'Choose your sheet', back: () => { flow.step = 'choose'; render(); } }),
+      h('div', { class: 'stack' },
+        h('ol', { class: 'steps' },
+          h('li', null, h('div', null, 'On Google\'s page, tap your expense sheet, then ', h('b', null, 'Allow'), '.')),
+          h('li', null, h('div', null, 'Come back here (tap ', h('b', null, 'Done'), ' at the top if you see it).'))),
+        h('p', { class: 'small muted' }, 'The app only gets access to the one sheet you choose.'),
+        h('button', { class: 'btn primary', onclick: checkPicked }, icon('check'), 'I\'ve chosen it'),
+        h('button', { class: 'btn', onclick: openPicker }, 'Open Google\'s page again'),
+      ),
+    ];
+  }
+
+  function listStep() {
+    const list = flow.sheetList || [];
+    return [
+      topbar({ title: 'Which sheet?', back: () => { flow.step = 'choose'; render(); } }),
+      h('div', { class: 'stack' },
+        list.length
+          ? h('div', null,
+            h('p', { class: 'muted', style: { margin: '0 4px 12px' } }, 'These are the sheets the app can open. Tap the one for your expenses.'),
+            h('div', { class: 'list' }, list.map((f) => h('button', { class: 'list-item', onclick: () => useSheet(f) }, icon('sheet'),
+              h('div', { class: 'grow' }, f.name), h('span', { class: 'chev' }, icon('chevron'))))))
+          : h('div', { class: 'banner warn' }, icon('alert'), h('div', { class: 'body' }, 'No sheet came through yet. On Google\'s page, make sure you tap your sheet and then Allow.')),
+        h('button', { class: 'btn', onclick: openPicker }, icon('sheet'), 'Choose a sheet on Google\'s page'),
+      ),
+    ];
+  }
+
   function chooseStep() {
+    if (pickerConfigured()) prefetchBaseline();
     const nameInput = h('input', { class: 'input', value: 'Expenses', autocapitalize: 'words' });
     return [
       topbar({ title: 'Which sheet?', back: () => goBack() }),
@@ -316,7 +379,7 @@ export function SheetsSettings() {
           ? h('div', { class: 'card pad stack' },
             h('b', null, 'Use a sheet you already have'),
             h('p', { class: 'small muted' }, 'Your existing columns and rows are kept; new expenses are added below.'),
-            h('button', { class: 'btn', onclick: chooseExisting }, icon('sheet'), 'Choose from my Google Drive'))
+            h('button', { class: 'btn', onclick: openPicker }, icon('sheet'), 'Choose from my Google Drive'))
           : null,
       ),
     ];
@@ -388,6 +451,10 @@ export function SheetsSettings() {
           if (!(await confirmSheet({ title: 'Disconnect Google Sheets?', message: 'Your sheet keeps everything already in it. New expenses will only be saved on this phone.', confirmText: 'Disconnect', danger: true }))) return;
           if (google()) await signOutGoogle();
           await updateSettings(resetSheets);
+          flow.step = null;
+          flow.autoTried = false;
+          render();
+          toast('Google Sheets disconnected');
         } }, 'Disconnect'),
       ),
     ];
@@ -397,6 +464,8 @@ export function SheetsSettings() {
     if (flow.busy) return fill(el, topbar({ title: 'Google Sheets', back: () => goBack() }), spinner(flow.busy));
     if (flow.step === 'device') return fill(el, ...deviceStep());
     if (flow.step === 'choose') return fill(el, ...chooseStep());
+    if (flow.step === 'picking') return fill(el, ...pickingStep());
+    if (flow.step === 'list') return fill(el, ...listStep());
     if (flow.step === 'tabs') return fill(el, ...tabsStep());
     if (flow.step === 'map') return fill(el, ...mapStep());
     if (flow.step === 'script') return fill(el, ...instructions());
@@ -422,7 +491,11 @@ export function SheetsSettings() {
   render();
   const offs = [on('sheets-changed', () => { if (!flow.step && !flow.busy && sheetsConnected()) render(); })];
   // Coming back from the Google page: check right away instead of waiting for the next poll.
-  const onVisible = () => { if (document.visibilityState === 'visible' && flow.step === 'device' && !flow.deviceError) schedulePoll(0.3); };
+  const onVisible = () => {
+    if (document.visibilityState !== 'visible') return;
+    if (flow.step === 'device' && !flow.deviceError) schedulePoll(0.3);
+    if (flow.step === 'picking' && !flow.busy) setTimeout(checkPicked, 400); // back from Google's picking page
+  };
   document.addEventListener('visibilitychange', onVisible);
   return {
     el,

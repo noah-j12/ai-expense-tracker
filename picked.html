@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sheet chosen · AI Expense Tracker</title>
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <style>
+    :root { --bg: #f4f6f4; --text: #16201b; --muted: #5e6b64; --accent: #0d7a61; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0e1411; --text: #e7eee9; --muted: #9eaba4; --accent: #3cc49d; } }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 18px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 520px; margin: 0 auto; padding: 64px 24px; text-align: center; }
+    img { width: 72px; height: 72px; border-radius: 18px; }
+    h1 { font-size: 26px; margin: 18px 0 8px; }
+    p { color: var(--muted); }
+    .check { font-size: 44px; color: var(--accent); }
+  </style>
+</head>
+<body>
+  <!-- Google sends people here after they pick a sheet. The app notices the pick on its own. -->
+  <main>
+    <img src="icons/icon-192.png" alt="">
+    <div id="ok">
+      <div class="check">✓</div>
+      <h1>Got it</h1>
+      <p>Go back to <b>AI Expense Tracker</b> to finish. If you see a <b>Done</b> button at the top, tap it.</p>
+    </div>
+    <div id="none" hidden>
+      <h1>No sheet chosen</h1>
+      <p>Go back to <b>AI Expense Tracker</b> and tap "Choose from my Google Drive" to try again.</p>
+    </div>
+  </main>
+  <script>
+    const q = new URLSearchParams(location.search);
+    if (q.get('error') || !q.get('picked_file_ids')) {
+      document.getElementById('ok').hidden = true;
+      document.getElementById('none').hidden = false;
+    }
+  </script>
+</body>
+</html>

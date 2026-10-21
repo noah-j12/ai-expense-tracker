@@ -3,7 +3,7 @@
 // which never shows the "unverified app" screen. Sign-in uses Google's device-code flow, which gives a
 // long-lasting refresh token, so the connection doesn't expire after an hour like browser sign-ins do.
 
-import { GOOGLE } from './google-config.js';
+import { GOOGLE, PICKED_PAGE } from './google-config.js';
 import { settings, updateSettings } from './settings.js';
 import { findHeaderRow } from './xlsx.js';
 
@@ -350,51 +350,30 @@ export async function uploadReceipt(blob, name) {
   }
 }
 
-// ---------- Choosing an existing sheet (Google Picker) ----------
+// ---------- Choosing an existing sheet ----------
+// Google's in-app picker can't work in iPhone Home Screen apps (Safari blocks the Google sign-in cookies it
+// needs inside embedded frames). Instead the user picks on Google's own page ("OnePick"). Picking grants this
+// Cloud project access to that one file, so the connection we already have can then see it in Drive.
 
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) return resolve();
-    const s = document.createElement('script');
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new GoogleError('Couldn\'t load Google\'s file picker. Check your connection.', { offline: true }));
-    document.head.append(s);
+const SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
+
+export function onePickUrl() {
+  const params = new URLSearchParams({
+    client_id: GOOGLE.pickerClientId,
+    redirect_uri: PICKED_PAGE,
+    response_type: 'code',
+    scope: SCOPE,
+    prompt: 'consent',
+    trigger_onepick: 'true',
+    mimetypes: SHEET_MIME,
+    state: Math.random().toString(36).slice(2),
   });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
 
-// Resolves { id, name } or null if cancelled. Picking a file is what gives the app access to it.
-export async function pickSpreadsheet() {
-  await loadScript('https://apis.google.com/js/api.js');
-  await new Promise((resolve) => window.gapi.load('picker', resolve));
-  const auth = await accessToken();
-  const g = window.google.picker;
-  return new Promise((resolve) => {
-    let done = false;
-    // Google's picker has no way out when it shows an error, so always put our own Close button on top.
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'btn picker-close';
-    closeBtn.textContent = 'Close';
-    const finish = (value) => {
-      if (done) return;
-      done = true;
-      closeBtn.remove();
-      try { picker.dispose(); } catch { /* already gone */ }
-      resolve(value);
-    };
-    closeBtn.onclick = () => finish(null);
-    const picker = new g.PickerBuilder()
-      .addView(new g.DocsView(g.ViewId.SPREADSHEETS).setMode(g.DocsViewMode.LIST))
-      .setOAuthToken(auth)
-      .setDeveloperKey(GOOGLE.apiKey)
-      .setAppId(GOOGLE.projectNumber)
-      .setTitle('Choose your expense sheet')
-      .setCallback((data) => {
-        if (data.action === g.Action.PICKED) finish({ id: data.docs[0].id, name: data.docs[0].name });
-        else if (data.action === g.Action.CANCEL) finish(null);
-      })
-      .build();
-    picker.setVisible(true);
-    document.body.append(closeBtn);
-  });
+// The spreadsheets this app can open (ones it created, or the user picked), most recent first.
+export async function accessibleSheets() {
+  const q = encodeURIComponent(`mimeType='${SHEET_MIME}' and trashed=false`);
+  const data = await api(`${DRIVE}?q=${q}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=50`);
+  return data.files || [];
 }
