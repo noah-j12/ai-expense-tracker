@@ -370,6 +370,19 @@ export async function pickSpreadsheet() {
   const auth = await accessToken();
   const g = window.google.picker;
   return new Promise((resolve) => {
+    let done = false;
+    // Google's picker has no way out when it shows an error, so always put our own Close button on top.
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn picker-close';
+    closeBtn.textContent = 'Close';
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      closeBtn.remove();
+      try { picker.dispose(); } catch { /* already gone */ }
+      resolve(value);
+    };
+    closeBtn.onclick = () => finish(null);
     const picker = new g.PickerBuilder()
       .addView(new g.DocsView(g.ViewId.SPREADSHEETS).setMode(g.DocsViewMode.LIST))
       .setOAuthToken(auth)
@@ -377,10 +390,11 @@ export async function pickSpreadsheet() {
       .setAppId(GOOGLE.projectNumber)
       .setTitle('Choose your expense sheet')
       .setCallback((data) => {
-        if (data.action === g.Action.PICKED) resolve({ id: data.docs[0].id, name: data.docs[0].name });
-        else if (data.action === g.Action.CANCEL) resolve(null);
+        if (data.action === g.Action.PICKED) finish({ id: data.docs[0].id, name: data.docs[0].name });
+        else if (data.action === g.Action.CANCEL) finish(null);
       })
       .build();
     picker.setVisible(true);
+    document.body.append(closeBtn);
   });
 }

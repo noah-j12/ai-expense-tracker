@@ -36,7 +36,7 @@ The app only asks for Google's `drive.file` permission ("files this app creates 
 ## 7. Create a key for the "choose an existing sheet" picker
 1. **APIs & Services → Credentials → Create credentials → API key**. Copy it, then click **Edit API key**.
 2. Application restrictions: **Websites** → add `https://noah-j12.github.io/*`.
-3. API restrictions: **Restrict key** → tick **Google Picker API** → **Save**.
+3. API restrictions: **Restrict key** → tick **Google Picker API** and **Google Drive API** (the picker uses Drive to list files; without it, it says "The API developer key is invalid") → **Save**.
 
 ## 8. Find the project number
 Cloud console home page → **Project info** card → **Project number**.

@@ -425,6 +425,16 @@ button.list-item:active { background: var(--surface-2); }
 .viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .viewer .icon-btn { position: fixed; top: calc(var(--safe-top) + 10px); right: 12px; color: #fff; background: rgb(255 255 255 / 15%); }
 
+/* Sits above Google's file picker, which can't be closed when it errors. */
+.picker-close {
+  position: fixed;
+  top: calc(var(--safe-top) + 10px);
+  right: 12px;
+  z-index: 2147483647;
+  min-height: 40px;
+  box-shadow: var(--shadow);
+}
+
 /* ---------- Voice conversation ---------- */
 
 .talk {
