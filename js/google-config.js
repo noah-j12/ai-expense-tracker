@@ -6,11 +6,11 @@
 // Google issues it for apps that run on people's own devices and expects it to ship inside the app.
 
 export const GOOGLE = {
-  clientId: '',
-  clientSecret: '',
+  clientId: '964305676640-t40935na6ombct5a74u4f2tn10rmdpv7.apps.googleusercontent.com',
+  clientSecret: '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',
   // For the "choose an existing sheet" picker:
   apiKey: '',
-  projectNumber: '',
+  projectNumber: '964305676640',
 };
 
 export const googleConfigured = () => Boolean(GOOGLE.clientId && GOOGLE.clientSecret);
