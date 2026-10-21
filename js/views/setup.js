@@ -180,6 +180,7 @@ export function SetupView() {
           return false;
         }
         draft.ai.apiKey = key;
+        toast('Key works. AI connected.');
         return true;
       },
     });

@@ -11,6 +11,7 @@ export function voiceChooser({ read, write, model, compact = false }) {
   const wrap = h('div', { class: 'stack' });
   let selected = read().openaiKey ? read().mode || 'keyboard' : 'keyboard';
   let pending = null; // a mode that needs a key the user hasn't added yet
+  let keySaved = ''; // success message kept across redraws, so it doesn't vanish
 
   const render = () => {
     const v = read();
@@ -21,8 +22,10 @@ export function voiceChooser({ read, write, model, compact = false }) {
     const keyCard = () => {
       const { input, row } = apiKeyInput(v.openaiKey);
       input.placeholder = 'sk-…';
-      const status = h('div', { class: 'small' });
+      const status = h('div', { class: 'small' },
+        keySaved ? h('div', { class: 'banner ok', style: { margin: 0 } }, icon('check'), h('div', { class: 'body' }, keySaved)) : null);
       const save = async () => {
+        keySaved = '';
         const key = input.value.trim();
         if (!key) { fill(status, h('span', { class: 'muted' }, 'Paste your OpenAI key first.')); return; }
         fill(status, h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Checking your key…'));
@@ -31,6 +34,7 @@ export function voiceChooser({ read, write, model, compact = false }) {
         await write((x) => { x.openaiKey = key; x.mode = pending || selected; });
         selected = pending || selected;
         pending = null;
+        keySaved = `Key works and is saved. "${VOICE_MODES.find((m) => m.id === selected)?.name}" is on; tap Talk to It on the home screen to try it.`;
         render();
       };
       return h('div', { class: 'card pad stack' },
