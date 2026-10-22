@@ -1,9 +1,9 @@
 // The "How do you want to talk to it?" chooser, shared by setup and Settings → AI.
 // read() returns the voice settings; write(fn) changes them (live settings or the setup draft).
 
-import { ASKABLE, PAUSE_OPTIONS, VOICES, VOICE_MODES, VOICE_STYLES, prepareAudio, releaseAudio, speak, stopSpeaking, testVoiceKey, voiceCost, voiceId, voiceStyleName, voiceStyleText } from '../speech.js';
+import { ASKABLE, PAUSE_OPTIONS, VOICES, VOICE_MODES, prepareAudio, releaseAudio, speak, stopSpeaking, testVoiceKey, voiceCost, voiceId } from '../speech.js';
 import { MODELS } from '../ai.js';
-import { choiceList, choiceSheet, field, openSheet, promptSheet, toggleRow } from '../ui.js';
+import { choiceList, choiceSheet, field, openSheet, toggleRow } from '../ui.js';
 import { fill, h, icon } from '../util.js';
 import { apiKeyInput } from './setup.js';
 
@@ -32,7 +32,7 @@ export function voiceChooser({ read, write, model, compact = false }) {
       draw();
       fill(status, 'Tap ▶ to hear a voice. Tap a name to choose it.');
       try {
-        await speak(`Hello, I'm ${o.name}. Tell me what you bought, and I'll log it for you.`, { voice: o.id, style: voiceStyleText(read()), key: read().openaiKey, sample: true });
+        await speak(`Hello, I'm ${o.name}. Tell me what you bought, and I'll log it for you.`, { voice: o.id, key: read().openaiKey, sample: true });
       } catch (e) {
         if (loading === o.id) fill(status, h('span', { style: { color: 'var(--danger)' } }, `Couldn't play ${o.name}: ${e.message}`));
       }
@@ -43,28 +43,6 @@ export function voiceChooser({ read, write, model, compact = false }) {
     return h('div', { class: 'stack' }, h('h3', null, 'Voice'), status, list,
       h('button', { class: 'btn block', onclick: close }, 'Done'));
   }, { onClose: () => { stopSpeaking(); releaseAudio(); } });
-
-  const pickStyle = async () => {
-    const v = read();
-    const id = await choiceSheet({
-      title: 'Accent',
-      options: VOICE_STYLES.map((s) => ({ label: s.name, hint: s.hint, value: s.id, selected: s.id === (v.voiceStyle || 'british') })),
-    });
-    if (!id) return;
-    if (id === 'custom') {
-      const text = await promptSheet({
-        title: 'How should it talk?',
-        message: 'Describe it in your own words.',
-        value: v.voiceStyleText || '',
-        placeholder: 'Southern accent, friendly and laid-back',
-      });
-      if (!text) return;
-      await write((x) => { x.voiceStyle = 'custom'; x.voiceStyleText = text; });
-    } else {
-      await write((x) => { x.voiceStyle = id; });
-    }
-    render();
-  };
 
   const render = () => {
     const v = read();
@@ -137,8 +115,6 @@ export function voiceChooser({ read, write, model, compact = false }) {
       selected !== 'keyboard' && !pending ? h('div', { class: 'list' },
         h('button', { class: 'list-item', onclick: pickVoice }, icon('speaker'), h('div', { class: 'grow' }, 'Voice'),
           h('span', { class: 'value small' }, VOICES.find((o) => o.id === voiceId(v)).name), h('span', { class: 'chev' }, icon('chevron'))),
-        h('button', { class: 'list-item', onclick: pickStyle }, icon('sparkle'), h('div', { class: 'grow' }, 'Accent'),
-          h('span', { class: 'value small' }, voiceStyleName(v)), h('span', { class: 'chev' }, icon('chevron'))),
         selected === 'live' ? toggleRow({
           label: 'Let me interrupt it',
           hint: 'Lets you talk over it. Best with headphones or AirPods; on the speaker it can hear itself and stop mid-sentence.',

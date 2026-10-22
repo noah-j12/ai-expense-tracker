@@ -105,7 +105,7 @@ function defaults() {
     // Optional voice conversations: OpenAI does the speech-to-text (Claude doesn't take audio).
     // mode: 'keyboard' | 'spoken' (AI voice replies) | 'live' (realtime conversation).
     // askFor: details the voice modes ask about when they weren't mentioned (amount and item are always asked).
-    voice: { mode: 'keyboard', openaiKey: '', talkBack: true, pause: 'normal', askFor: ['vendor', 'paymentMethod'], allowInterrupt: false, aiVoice: 'cedar', voiceStyle: 'british', voiceStyleText: '' },
+    voice: { mode: 'keyboard', openaiKey: '', talkBack: true, pause: 'normal', askFor: ['vendor', 'paymentMethod'], allowInterrupt: false, aiVoice: 'ballad' },
     // Google Sheets: the tab and its columns ({ header, field }) once set up.
     // mode 'google': connected with Google sign-in (no script); 'script': the Apps Script method.
     sheets: { mode: 'script', url: '', secret: '', connectedName: '', tab: '', columns: [], google: { refreshToken: '', spreadsheetId: '', folderId: '' } },

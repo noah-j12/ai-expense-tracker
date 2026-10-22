@@ -248,54 +248,33 @@ export async function errorDetail(res) {
   try { return JSON.parse(text).error?.message || text.slice(0, 200) || `error ${res.status}`; } catch { return text.slice(0, 200) || `error ${res.status}`; }
 }
 
-// Voices that work for both spoken replies and live conversation.
+// Voices that work for both spoken replies and live conversation, with each one's natural accent.
+// (Asking a voice for a different accent works only some of the time, so it isn't offered.)
 export const VOICES = [
-  { id: 'cedar', name: 'Cedar', hint: 'Calm and natural, deeper. Recommended.' },
-  { id: 'marin', name: 'Marin', hint: 'Warm and natural. Recommended.' },
-  { id: 'coral', name: 'Coral', hint: 'Bright and friendly' },
-  { id: 'sage', name: 'Sage', hint: 'Gentle and calm' },
-  { id: 'shimmer', name: 'Shimmer', hint: 'Light and clear' },
-  { id: 'alloy', name: 'Alloy', hint: 'Neutral and even' },
-  { id: 'ash', name: 'Ash', hint: 'Clear and steady, deeper' },
-  { id: 'echo', name: 'Echo', hint: 'Smooth, deeper' },
-  { id: 'ballad', name: 'Ballad', hint: 'Soft and expressive, deeper' },
-  { id: 'verse', name: 'Verse', hint: 'Lively and expressive, deeper' },
+  { id: 'ballad', name: 'Ballad', hint: 'British accent. Soft and expressive, deeper.' },
+  { id: 'cedar', name: 'Cedar', hint: 'American accent. Calm and natural, deeper.' },
+  { id: 'marin', name: 'Marin', hint: 'American accent. Warm and natural.' },
+  { id: 'ash', name: 'Ash', hint: 'American accent. Clear and steady, deeper.' },
+  { id: 'echo', name: 'Echo', hint: 'American accent. Smooth, deeper.' },
+  { id: 'verse', name: 'Verse', hint: 'American accent. Lively and expressive, deeper.' },
+  { id: 'coral', name: 'Coral', hint: 'American accent. Bright and friendly.' },
+  { id: 'sage', name: 'Sage', hint: 'American accent. Gentle and calm.' },
+  { id: 'shimmer', name: 'Shimmer', hint: 'American accent. Light and clear.' },
+  { id: 'alloy', name: 'Alloy', hint: 'American accent. Neutral and even.' },
 ];
 
 // The chosen voice, or the default if it's missing or no longer offered.
 export function voiceId(v = settings().voice) {
-  return VOICES.some((x) => x.id === v?.aiVoice) ? v.aiVoice : 'cedar';
-}
-
-// How the voice speaks: accent and manner, sent as instructions to both the AI voice and live conversation.
-export const VOICE_STYLES = [
-  {
-    id: 'british',
-    name: 'British',
-    hint: 'Calm, polished British accent',
-    text: 'Speak with a refined, crisp British accent (received pronunciation). Calm, composed and quietly confident, with polished phrasing and a subtle dry wit. Smooth, measured and clear; never rushed.',
-  },
-  { id: 'natural', name: 'American', hint: 'Relaxed, friendly American accent', text: 'Warm, relaxed and brief, like a helpful assistant confirming something quickly.' },
-  { id: 'custom', name: 'Describe it yourself', hint: 'For example: "Southern accent, friendly and laid-back"' },
-];
-
-export function voiceStyleText(v = settings().voice) {
-  if (v?.voiceStyle === 'custom' && v.voiceStyleText?.trim()) return v.voiceStyleText.trim();
-  return (VOICE_STYLES.find((s) => s.id === v?.voiceStyle) || VOICE_STYLES[0]).text;
-}
-
-export function voiceStyleName(v = settings().voice) {
-  if (v?.voiceStyle === 'custom' && v.voiceStyleText?.trim()) return 'Your description';
-  return (VOICE_STYLES.find((s) => s.id === v?.voiceStyle && s.text) || VOICE_STYLES[0]).name;
+  return VOICES.some((x) => x.id === v?.aiVoice) ? v.aiVoice : VOICES[0].id;
 }
 
 let playing = null; // the AudioBufferSourceNode currently speaking
 
 // Speaks with OpenAI's AI voice through the AudioContext opened during the user's tap
 // (so iOS allows playback). If the voice can't be fetched, the text is still on screen.
-// A sample (from the voice picker) passes its own voice, style and key, plays even with talk-back off,
+// A sample (from the voice picker) passes its own voice and key, plays even with talk-back off,
 // and throws an error saying what went wrong. Resolves true once it has played.
-export async function speak(text, { voice, style, key = settings().voice?.openaiKey, sample = false } = {}) {
+export async function speak(text, { voice, key = settings().voice?.openaiKey, sample = false } = {}) {
   if (!text || !key || (!sample && settings().voice?.talkBack === false) || !audioCtx) {
     if (sample) throw new Error(key ? "The phone's audio didn't start. Tap ▶ again." : 'Add your OpenAI key first.');
     return false;
@@ -310,7 +289,7 @@ export async function speak(text, { voice, style, key = settings().voice?.openai
         model: TTS_MODEL,
         voice: voice || voiceId(),
         input: text,
-        instructions: style || voiceStyleText(),
+        instructions: 'Warm, relaxed and brief, like a helpful assistant confirming something quickly.',
         response_format: 'mp3',
       }),
     });
