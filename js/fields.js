@@ -1,7 +1,7 @@
 // The parts of an expense that can fill a spreadsheet column. Shared by Google Sheets and custom export formats.
 
 import { businessName } from './settings.js';
-import { parseISODate } from './util.js';
+import { parseISODate, toISODate } from './util.js';
 
 export const FIELDS = [
   { key: 'date', label: 'Date' },
@@ -40,7 +40,44 @@ export function formatExportDate(iso, format) {
   return `${mm}/${dd}/${yyyy}`;
 }
 
-const SOURCE_LABELS = { photo: 'Photo', upload: 'Upload', voice: 'Voice', manual: 'Manual' };
+const SOURCE_LABELS = { photo: 'Photo', upload: 'Upload', voice: 'Voice', manual: 'Manual', sheet: 'Sheet' };
+
+// Fields that a change typed into the sheet can update in the app.
+export const SHEET_EDITABLE = new Set(['date', 'vendor', 'description', 'category', 'total', 'totalNegative', 'subtotal', 'tax', 'tip', 'currency', 'paymentMethod', 'notes']);
+const MONEY = new Set(['total', 'totalNegative', 'subtotal', 'tax', 'tip']);
+
+// The ISO date if it's a real calendar date (not, say, Feb 31).
+const realDate = (iso) => (toISODate(parseISODate(iso) || new Date(NaN)) === iso ? iso : undefined);
+
+// A sheet cell (or the app's own value) in one comparable form: ISO dates, amounts rounded to cents,
+// trimmed text. Returns undefined for a cell that can't be understood (e.g. a date typed as "Tuesday"),
+// which is then left alone.
+export function normalizeField(key, v, dateFormat = 'MDY') {
+  if (key === 'date') {
+    if (typeof v === 'number' && v > 0) {
+      // Google Sheets date serial: days since 1899-12-30.
+      return new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86_400_000).toISOString().slice(0, 10);
+    }
+    const s = String(v ?? '').trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return realDate(s.slice(0, 10));
+    const m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/);
+    if (!m) return undefined;
+    const [a, b] = dateFormat === 'DMY' ? [m[2], m[1]] : [m[1], m[2]];
+    const iso = `${m[3].length === 2 ? `20${m[3]}` : m[3]}-${a.padStart(2, '0')}-${b.padStart(2, '0')}`;
+    return realDate(iso);
+  }
+  if (MONEY.has(key)) {
+    if (typeof v === 'number') return Math.round(v * 100) / 100;
+    const s = String(v ?? '').trim();
+    if (!s) return 0;
+    const n = parseFloat(s.replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(n)) return undefined;
+    const negative = /^\(.*\)$/.test(s) || /^[^0-9]*-/.test(s);
+    return Math.round((negative ? -n : n) * 100) / 100;
+  }
+  const s = String(v ?? '').trim();
+  return key === 'category' && s === 'Uncategorized' ? '' : s;
+}
 
 // sheet: true gives raw numbers and ISO dates (Google Sheets formats them itself);
 // otherwise values are formatted text for a CSV file.

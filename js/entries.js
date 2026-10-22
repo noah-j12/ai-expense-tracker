@@ -101,7 +101,8 @@ async function doUpdate(id, change, { syncSheet = true } = {}) {
   return entry;
 }
 
-export async function removeEntry(id) {
+// fromSheet: the row was already deleted in the sheet, so there's nothing to remove there.
+export async function removeEntry(id, { fromSheet = false } = {}) {
   const entry = await getEntry(id);
   if (!entry) return;
   await deleteEntryRecord(id);
@@ -109,7 +110,7 @@ export async function removeEntry(id) {
     const others = (await getAllEntries()).some((e) => e.fileId === entry.fileId);
     if (!others) await deleteFile(entry.fileId);
   }
-  if (entry.sheet?.syncedAt) {
+  if (entry.sheet?.syncedAt && !fromSheet) {
     const pending = (await kvGet('sheetDeletes')) || [];
     await kvSet('sheetDeletes', [...pending, id]);
   }

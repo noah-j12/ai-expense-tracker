@@ -4,11 +4,11 @@
 // hidden ID column so it can find the app's rows again. Nothing runs on our side.
 
 import { getFile, kvGet, kvSet, putEntry } from './db.js';
-import { ID_HEADER, fieldValue } from './fields.js';
+import { ID_HEADER, SHEET_EDITABLE, fieldValue, normalizeField } from './fields.js';
 import { hasMultipleBusinesses, settings } from './settings.js';
-import { getEntry, hasReceipt, listEntries } from './entries.js';
+import { createEntry, getEntry, hasReceipt, listEntries, removeEntry } from './entries.js';
 import { blobToBase64, emit, safeFileName } from './util.js';
-import { googleDelete, googleUpsert, prepareGoogleTab, spreadsheetInfo, uploadReceipt } from './google.js';
+import { googleDelete, googleRows, googleSetIds, googleUpsert, prepareGoogleTab, spreadsheetInfo, uploadReceipt } from './google.js';
 
 export const SCRIPT_VERSION = 2;
 export const sheetsState = { error: '', lastSync: null };
@@ -97,6 +97,107 @@ function receiptName(e, type) {
   return safeFileName(`${e.fields.date} ${e.fields.vendor || 'Receipt'} ${e.fields.total}`) + '.' + ext;
 }
 
+// ---------- Changes made in the sheet (Google sign-in only) ----------
+// The app and the sheet follow each other: edited cells update the expense, a row deleted in the sheet
+// deletes the expense, and a row typed into the sheet becomes a new expense. Rows that were already in
+// the sheet when it was connected are marked sheet-only and left alone. If the same detail changed on
+// both sides before they caught up, the app's change wins. The sheet only loses a row when the user
+// deletes that expense in the app.
+
+const SHEET_ONLY = 'sheet-only';
+const TEXT_FIELDS = new Set(['vendor', 'description', 'vendorDescription', 'category', 'currency', 'paymentMethod', 'notes', 'book', 'status', 'source']);
+const isBlank = (e) => !e.fields.vendor && !e.fields.description && !Number(e.fields.total);
+
+// An "amount as a negative number" column is the amount with the sign flipped.
+function foldNegative(out) {
+  if ('totalNegative' in out) {
+    if (!('total' in out)) out.total = -out.totalNegative;
+    delete out.totalNegative;
+  }
+  return out;
+}
+
+// What the app last wrote for each field the sheet can change, so later edits in the sheet can be spotted.
+function sentSnapshot(e, mapped) {
+  const out = {};
+  for (const c of mapped) if (SHEET_EDITABLE.has(c.field)) out[c.field] = normalizeField(c.field, fieldValue(e, c.field, { sheet: true }));
+  return foldNegative(out);
+}
+
+async function pullFromGoogle({ spreadsheetId, tab, mapped }) {
+  const where = `${spreadsheetId}|${tab}`;
+  const { idColumn, rows } = await googleRows({ spreadsheetId, tab, idHeader: ID_HEADER });
+  const local = new Map((await listEntries()).map((e) => [e.id, e]));
+  const expected = [...local.values()].filter((e) => e.sheet?.syncedTo === where);
+  // Rows should match but none do (the hidden ID column was cleared, say): change nothing rather than guess.
+  if (expected.length && !rows.some((r) => local.has(r.id))) return;
+
+  const pendingDeletes = new Set((await kvGet('sheetDeletes')) || []);
+  const firstLook = (await kvGet('sheetBaseline')) !== where;
+  const dateFormat = settings().dateFormat;
+  const columns = mapped.filter((c) => SHEET_EDITABLE.has(c.field));
+  const cellsOf = (r) => {
+    const out = {};
+    for (const c of columns) {
+      const v = normalizeField(c.field, r.values[c.header], dateFormat);
+      if (v !== undefined && !(c.field in out)) out[c.field] = v;
+    }
+    return foldNegative(out);
+  };
+  // Columns built from other details (e.g. "vendor - description") are rewritten after a change.
+  const derived = mapped.some((c) => c.field === 'vendorDescription') || (mapped.some((c) => c.field === 'total') && mapped.some((c) => c.field === 'totalNegative'));
+
+  const marks = [];
+  const seen = new Set();
+  for (const r of rows) {
+    if (r.id === SHEET_ONLY || pendingDeletes.has(r.id)) continue;
+    if (local.has(r.id)) {
+      seen.add(r.id);
+      await applySheetEdits(r.id, cellsOf(r), { where, mapped, derived });
+    } else if (firstLook) {
+      marks.push({ rowNumber: r.rowNumber, id: SHEET_ONLY });
+    } else {
+      const added = await addFromSheet(cellsOf(r), { where, mapped });
+      if (added) marks.push({ rowNumber: r.rowNumber, id: added.id });
+    }
+  }
+  // Deleted in the sheet. If it was edited in the app since, that edit wins and the row is added back.
+  for (const e of expected) {
+    if (!seen.has(e.id) && !e.sheet.dirty) await removeEntry(e.id, { fromSheet: true });
+  }
+  if (marks.length) await googleSetIds({ spreadsheetId, tab, idColumn, marks });
+  if (firstLook) await kvSet('sheetBaseline', where);
+}
+
+async function applySheetEdits(id, cells, { where, mapped, derived }) {
+  const e = await getEntry(id);
+  if (!e) return;
+  const sent = e.sheet?.sent || {};
+  const appChanged = Boolean(e.sheet?.dirty);
+  let changed = false;
+  for (const [key, value] of Object.entries(cells)) {
+    const now = normalizeField(key, fieldValue(e, key, { sheet: true }));
+    const before = key in sent ? sent[key] : now;
+    if (value === before) continue; // not changed in the sheet
+    if (appChanged && now !== before) continue; // changed in both: the app's edit wins
+    e.fields[key] = value;
+    changed = true;
+  }
+  if (!changed && e.sheet?.syncedTo === where) return;
+  e.sheet = { ...e.sheet, syncedTo: where, ...(appChanged ? {} : { sent: sentSnapshot(e, mapped) }), dirty: appChanged || (changed && derived) };
+  if (changed) e.updatedAt = Date.now();
+  await putEntry(e);
+  if (changed) emit('entries-changed', { id });
+}
+
+async function addFromSheet(cells, { where, mapped }) {
+  if (!cells.vendor && !cells.description && !cells.total) return null; // half-typed, or not an expense row
+  const e = await createEntry({ source: 'sheet', fields: cells });
+  e.sheet = { dirty: false, receiptUrl: '', syncedAt: Date.now(), syncedTo: where, sent: sentSnapshot(e, mapped) };
+  await putEntry(e);
+  return e;
+}
+
 let syncing = false;
 
 export async function syncSheets() {
@@ -109,6 +210,7 @@ export async function syncSheets() {
   try {
     const google = usingGoogle();
     const spreadsheetId = settings().sheets.google?.spreadsheetId;
+    if (google) await pullFromGoogle({ spreadsheetId, tab, mapped });
     const deletes = (await kvGet('sheetDeletes')) || [];
     if (deletes.length) {
       if (google) await googleDelete({ spreadsheetId, tab, ids: deletes, idHeader: ID_HEADER });
@@ -121,20 +223,25 @@ export async function syncSheets() {
     const knownUrls = new Map(all.filter((e) => e.fileId && e.sheet?.receiptUrl).map((e) => [e.fileId, e.sheet.receiptUrl]));
     // Oldest first, so new rows land in date order below the existing ones.
     const dirty = all
-      .filter((e) => e.sheet?.dirty && (e.aiStatus === 'done' || e.aiStatus === 'skipped'))
+      .filter((e) => e.sheet?.dirty && (e.aiStatus === 'done' || e.aiStatus === 'skipped') && !isBlank(e))
       .sort((a, b) => a.fields.date.localeCompare(b.fields.date) || a.createdAt - b.createdAt);
 
     // Only clear the dirty flag if nothing changed while we were uploading.
     const markSynced = async (e, receiptUrl) => {
       const latest = await getEntry(e.id);
       if (latest) {
-        latest.sheet = { ...latest.sheet, receiptUrl, syncedAt: Date.now(), dirty: latest.updatedAt !== e.updatedAt };
+        latest.sheet = { ...latest.sheet, receiptUrl, syncedAt: Date.now(), dirty: latest.updatedAt !== e.updatedAt, syncedTo: `${spreadsheetId}|${tab}`, sent: sentSnapshot(e, mapped) };
         await putEntry(latest);
       }
     };
     const itemFor = (e) => {
       const values = {};
-      for (const c of mapped) if (c.field !== 'receipt') values[c.header] = fieldValue(e, c.field, { sheet: true });
+      for (const c of mapped) {
+        if (c.field === 'receipt') continue;
+        const v = fieldValue(e, c.field, { sheet: true });
+        // A leading ' keeps text as text in Google Sheets (so "10-22" isn't turned into a date); it isn't shown.
+        values[c.header] = google && TEXT_FIELDS.has(c.field) && v ? `'${v}` : v;
+      }
       const receiptUrl = e.sheet?.receiptUrl || (e.fileId && knownUrls.get(e.fileId)) || '';
       return { id: e.id, values, receiptUrl };
     };

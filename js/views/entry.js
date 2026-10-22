@@ -213,7 +213,7 @@ export function EntryView({ params, query }) {
     const model = MODELS.find((m) => m.id === e.aiModel || e.aiModel?.startsWith(m.id));
     const parts = [
       `Logged ${formatDateTime(e.createdAt)}`,
-      { photo: 'Photo', upload: 'Upload', voice: 'Voice/typed', manual: 'Entered by hand' }[e.source],
+      { photo: 'Photo', upload: 'Upload', voice: 'Voice/typed', manual: 'Entered by hand', sheet: 'Added in the sheet' }[e.source],
       e.aiModel ? `Read by ${model ? model.detail.split(' · ')[0] : e.aiModel}` : null,
       sheetsConnected() ? (e.sheet?.syncedAt && !e.sheet.dirty ? 'Saved to Google Sheets' : 'Not yet in Google Sheets') : null,
       e.exportedAt ? `Exported ${formatDateTime(e.exportedAt)}` : null,
