@@ -33,9 +33,17 @@ export function voiceEnabled() {
 
 // ---------- Recording ----------
 
+// iPhones mute web audio when the ringer switch is on silent, unless the page asks to be treated as
+// media playback ('playback') or a call ('play-and-record', needed while the mic is on). Both play
+// whenever the volume is up. Safari 17+; older versions ignore it.
+export function setAudioSession(type) {
+  try { if (navigator.audioSession) navigator.audioSession.type = type; } catch { /* not supported */ }
+}
+
 // One AudioContext for the whole conversation, created during the user's tap (iOS requires that).
 let audioCtx = null;
 export function prepareAudio() {
+  setAudioSession('playback');
   if (!audioCtx || audioCtx.state === 'closed') {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     audioCtx = Ctx ? new Ctx() : null;
@@ -46,6 +54,7 @@ export function prepareAudio() {
 export const audioContext = () => audioCtx;
 
 export function releaseAudio() {
+  setAudioSession('auto');
   audioCtx?.close?.().catch(() => {});
   audioCtx = null;
 }
@@ -65,6 +74,7 @@ export function recordTurn({ onLevel, maxMs = 180_000, signal } = {}) {
     }
     let stream;
     try {
+      setAudioSession('play-and-record');
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     } catch (err) {
       reject(err?.name === 'NotAllowedError' || err?.name === 'SecurityError'
@@ -320,6 +330,7 @@ export async function speak(text, { voice, style, key = settings().voice?.openai
     const check = await testVoiceKey(key);
     throw new Error(check.ok ? "OpenAI didn't send the voice. Try again in a moment." : check.message);
   }
+  setAudioSession('playback'); // the mic is off between turns; plays through silent mode on the loudspeaker
   return new Promise((resolve) => {
     stopSpeaking();
     const src = audioCtx.createBufferSource();

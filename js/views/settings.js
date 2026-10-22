@@ -13,7 +13,7 @@ import { FormatsView } from './formats.js';
 import { SheetsSettings } from './sheets-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.9.1';
+export const APP_VERSION = '1.9.2';
 
 export function goBack(fallback = '#/settings') {
   navBack(fallback);

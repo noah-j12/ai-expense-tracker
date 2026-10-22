@@ -7,7 +7,7 @@ import { AIError, extractExpenses } from './ai.js';
 import { applyAIResult, createEntry, getEntry, updateEntry } from './entries.js';
 import { kick } from './queue.js';
 import { settings } from './settings.js';
-import { MicError, askingRules, audioContext, errorDetail, prepareAudio, releaseAudio, voiceId, voiceStyleText } from './speech.js';
+import { MicError, askingRules, audioContext, errorDetail, prepareAudio, releaseAudio, setAudioSession, voiceId, voiceStyleText } from './speech.js';
 import { toast } from './ui.js';
 import { fill, formatMoney, h, icon } from './util.js';
 
@@ -206,6 +206,7 @@ export function startLive({ onUseKeyboard }) {
     setPhase('thinking', 'Connecting…');
     try {
       try {
+        setAudioSession('play-and-record');
         stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       } catch (err) {
         throw new MicError('mic', err?.name === 'NotAllowedError' || err?.name === 'SecurityError' ? 'denied' : 'broken');
