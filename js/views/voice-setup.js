@@ -1,9 +1,9 @@
 // The "How do you want to talk to it?" chooser, shared by setup and Settings → AI.
 // read() returns the voice settings; write(fn) changes them (live settings or the setup draft).
 
-import { ASKABLE, PAUSE_OPTIONS, VOICE_MODES, testVoiceKey, voiceCost } from '../speech.js';
+import { ASKABLE, PAUSE_OPTIONS, VOICES, VOICE_MODES, prepareAudio, releaseAudio, speak, stopSpeaking, testVoiceKey, voiceCost, voiceId } from '../speech.js';
 import { MODELS } from '../ai.js';
-import { choiceList, choiceSheet, field, toggleRow } from '../ui.js';
+import { choiceList, choiceSheet, field, openSheet, toggleRow } from '../ui.js';
 import { fill, h, icon } from '../util.js';
 import { apiKeyInput } from './setup.js';
 
@@ -12,6 +12,33 @@ export function voiceChooser({ read, write, model, compact = false }) {
   let selected = read().openaiKey ? read().mode || 'keyboard' : 'keyboard';
   let pending = null; // a mode that needs a key the user hasn't added yet
   let keySaved = ''; // success message kept across redraws, so it doesn't vanish
+
+  // Each voice has a play button for a short sample (a fraction of a cent) and is picked by tapping its name.
+  const pickVoice = () => openSheet((close) => {
+    const list = h('div', { class: 'list' });
+    const status = h('div', { class: 'small muted' }, 'Tap ▶ to hear a voice, then tap its name to use it.');
+    let loading = null;
+    const draw = () => fill(list, VOICES.map((o) => h('div', { class: 'list-item' },
+      h('button', { class: 'icon-btn', 'aria-label': `Play ${o.name}`, onclick: () => play(o) },
+        loading === o.id ? h('span', { class: 'spinner' }) : icon('play')),
+      h('button', {
+        class: 'grow', style: { border: 0, background: 'none', textAlign: 'left', padding: 0, color: 'inherit', font: 'inherit' },
+        onclick: async () => { await write((x) => { x.aiVoice = o.id; }); close(); render(); },
+      }, h('div', null, o.name), h('div', { class: 'tiny muted' }, o.hint)),
+      o.id === voiceId(read()) ? icon('check') : null)));
+    const play = async (o) => {
+      prepareAudio(); // during the tap, so iOS allows the sound
+      loading = o.id;
+      draw();
+      const ok = await speak(`Hi, I'm ${o.name}. Tell me what you bought, and I'll log it for you.`, { voice: o.id, key: read().openaiKey, sample: true });
+      if (loading === o.id) loading = null;
+      draw();
+      if (!ok && !loading) fill(status, h('span', { style: { color: 'var(--danger)' } }, "Couldn't play the sample. Check your internet connection and OpenAI key."));
+    };
+    draw();
+    return h('div', { class: 'stack' }, h('h3', null, 'Voice'), status, list,
+      h('button', { class: 'btn block', onclick: close }, 'Done'));
+  }, { onClose: () => { stopSpeaking(); releaseAudio(); } });
 
   const render = () => {
     const v = read();
@@ -81,22 +108,23 @@ export function voiceChooser({ read, write, model, compact = false }) {
             }),
           })),
         )) : null,
-      selected === 'live' && !pending ? h('div', { class: 'list' },
-        toggleRow({
+      selected !== 'keyboard' && !pending ? h('div', { class: 'list' },
+        h('button', { class: 'list-item', onclick: pickVoice }, icon('speaker'), h('div', { class: 'grow' }, 'Voice'),
+          h('span', { class: 'value small' }, VOICES.find((o) => o.id === voiceId(v)).name), h('span', { class: 'chev' }, icon('chevron'))),
+        selected === 'live' ? toggleRow({
           label: 'Let me interrupt it',
           hint: 'Best with headphones or AirPods. On the phone speaker the mic can hear the AI and cut it off, so this is off by default.',
           checked: v.allowInterrupt === true,
           onChange: (on) => write((x) => { x.allowInterrupt = on; }),
-        })) : null,
-      selected === 'spoken' && !pending ? h('div', { class: 'list' },
-        toggleRow({ label: 'Talk back out loud', hint: 'Off: questions are shown on screen only.', checked: v.talkBack !== false, onChange: (on) => write((x) => { x.talkBack = on; }) }),
-        h('button', { class: 'list-item', onclick: async () => {
+        }) : null,
+        selected === 'spoken' ? toggleRow({ label: 'Talk back out loud', hint: 'Off: questions are shown on screen only.', checked: v.talkBack !== false, onChange: (on) => write((x) => { x.talkBack = on; }) }) : null,
+        selected === 'spoken' ? h('button', { class: 'list-item', onclick: async () => {
           const p = await choiceSheet({ title: 'Pause before it stops listening', options: PAUSE_OPTIONS.map((o) => ({ label: o.name, hint: o.hint, value: o.id, selected: o.id === v.pause })) });
           if (!p) return;
           await write((x) => { x.pause = p; });
           render();
         } }, icon('clock'), h('div', { class: 'grow' }, 'Pause before it stops listening'),
-        h('span', { class: 'value small' }, PAUSE_OPTIONS.find((o) => o.id === v.pause)?.name || 'Normal'), h('span', { class: 'chev' }, icon('chevron'))),
+        h('span', { class: 'value small' }, PAUSE_OPTIONS.find((o) => o.id === v.pause)?.name || 'Normal'), h('span', { class: 'chev' }, icon('chevron'))) : null,
       ) : null,
     );
   };

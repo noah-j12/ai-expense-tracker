@@ -1,5 +1,5 @@
 // Voice conversations: record with automatic end-of-speech detection, transcribe with OpenAI
-// (Claude doesn't take audio), and talk back with the iPhone's built-in voice.
+// (Claude doesn't take audio), and talk back with OpenAI's AI voice.
 
 import { settings } from './settings.js';
 
@@ -231,15 +231,34 @@ export async function transcribeWithRetry(blob, tries = 3) {
 
 // OpenAI is retiring this model on 2027-01-06; move to its replacement before then.
 export const TTS_MODEL = 'gpt-4o-mini-tts';
-export const TTS_VOICE = 'marin';
+
+// Voices that work for both spoken replies and live conversation.
+export const VOICES = [
+  { id: 'marin', name: 'Marin', hint: 'Warm and natural. Recommended.' },
+  { id: 'cedar', name: 'Cedar', hint: 'Calm and natural, deeper. Recommended.' },
+  { id: 'coral', name: 'Coral', hint: 'Bright and friendly' },
+  { id: 'sage', name: 'Sage', hint: 'Gentle and calm' },
+  { id: 'shimmer', name: 'Shimmer', hint: 'Light and clear' },
+  { id: 'alloy', name: 'Alloy', hint: 'Neutral and even' },
+  { id: 'ash', name: 'Ash', hint: 'Clear and steady, deeper' },
+  { id: 'echo', name: 'Echo', hint: 'Smooth, deeper' },
+  { id: 'ballad', name: 'Ballad', hint: 'Soft and expressive, deeper' },
+  { id: 'verse', name: 'Verse', hint: 'Lively and expressive, deeper' },
+];
+
+// The chosen voice, or the default if it's missing or no longer offered.
+export function voiceId(v = settings().voice) {
+  return VOICES.some((x) => x.id === v?.aiVoice) ? v.aiVoice : VOICES[0].id;
+}
 
 let playing = null; // the AudioBufferSourceNode currently speaking
 
 // Speaks with OpenAI's AI voice through the AudioContext opened during the user's tap
 // (so iOS allows playback). If the voice can't be fetched, the text is still on screen.
-export async function speak(text) {
-  const key = settings().voice?.openaiKey;
-  if (!text || !key || settings().voice?.talkBack === false || !audioCtx) return;
+// A sample (from the voice picker) passes its own voice and key and plays even with talk-back off.
+// Resolves true once it has played.
+export async function speak(text, { voice, key = settings().voice?.openaiKey, sample = false } = {}) {
+  if (!text || !key || (!sample && settings().voice?.talkBack === false) || !audioCtx) return false;
   let audio;
   try {
     const res = await fetch(`${OPENAI}/audio/speech`, {
@@ -247,23 +266,23 @@ export async function speak(text) {
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: TTS_MODEL,
-        voice: TTS_VOICE,
+        voice: voice || voiceId(),
         input: text,
         instructions: 'Warm, relaxed and brief, like a helpful assistant confirming something quickly.',
         response_format: 'mp3',
       }),
     });
-    if (!res.ok) return;
+    if (!res.ok) return false;
     audio = await audioCtx.decodeAudioData(await res.arrayBuffer());
   } catch {
-    return;
+    return false;
   }
   await new Promise((resolve) => {
     stopSpeaking();
     const src = audioCtx.createBufferSource();
     src.buffer = audio;
     src.connect(audioCtx.destination);
-    src.onended = () => { if (playing === src) playing = null; resolve(); };
+    src.onended = () => { if (playing === src) playing = null; resolve(true); };
     playing = src;
     audioCtx.resume?.();
     src.start();

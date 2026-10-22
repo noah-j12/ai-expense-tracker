@@ -7,7 +7,7 @@ import { AIError, extractExpenses } from './ai.js';
 import { applyAIResult, createEntry, getEntry, updateEntry } from './entries.js';
 import { kick } from './queue.js';
 import { settings } from './settings.js';
-import { MicError, TTS_VOICE, askingRules, audioContext, prepareAudio, releaseAudio } from './speech.js';
+import { MicError, askingRules, audioContext, prepareAudio, releaseAudio, voiceId } from './speech.js';
 import { toast } from './ui.js';
 import { fill, formatMoney, h, icon } from './util.js';
 
@@ -73,7 +73,7 @@ async function mintSecret(withTranscription) {
         // Only for showing the user's words on screen; the conversation works without it.
         ...(withTranscription ? { transcription: { model: LIVE_TRANSCRIBE_MODEL } } : {}),
       },
-      output: { voice: TTS_VOICE },
+      output: { voice: voiceId() },
     },
     tools: [TOOL],
     tool_choice: 'auto',
