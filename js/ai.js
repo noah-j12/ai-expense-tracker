@@ -99,7 +99,7 @@ Return one record per separate purchase. A receipt is one record even with many 
 Spoken notes come from phone dictation, so they may ramble, include filler words, contain transcription mistakes, or correct themselves ("twenty-two thirty-nine, no, forty-nine"). Use the speaker's final, corrected details and ignore the rest.
 
 Fields:
-- date: purchase date as YYYY-MM-DD. Resolve relative dates ("yesterday", "last Friday") against the date the entry was recorded, which is given with each entry. If no date is shown or stated, use the recorded date and add a review reason saying so.
+- date: purchase date as YYYY-MM-DD. Resolve relative dates ("yesterday", "last Friday") against the date the entry was recorded, which is given with each entry. If a spoken or typed note doesn't mention a date, use the recorded date without a review reason (people log things the day they buy them). If a receipt or invoice shows no date, use the recorded date and add a review reason saying so.
 - vendor: the business name as a person would write it ("Home Depot", not "THE HOME DEPOT #0412").
 - description: what was bought, in a few plain words.
 - total: the final amount paid, including tax and tip. Use a negative number for a refund or return.
@@ -108,7 +108,7 @@ Fields:
 - category: ${categoryLine}
 - payment_method: ${paymentLine} If one clearly matches, use its exact name. Otherwise describe what is shown (e.g. "Visa ending 4821"), or "" if unknown.
 - notes: anything an accountant would want that doesn't fit elsewhere, such as an invoice number, the last four digits of a card, or who a meal was with when stated. Brief; "" if nothing.
-- confidence and review_reasons: be honest. Add a short reason for anything you guessed or could not read clearly, or anything unusual (faded print, cut-off receipt, handwritten tip, totals that don't add up). Leave review_reasons empty when everything is clear.
+- confidence and review_reasons: be honest, but only flag real doubts the person should check: an amount or detail you couldn't read clearly, totals that don't add up, a store or amount you had to guess, or something unusual (cut-off receipt, handwritten tip). Don't flag routine choices such as picking the category, matching a payment method, using the recorded date for a spoken note, or tidying a store name. Write each reason in plain words for the person, e.g. "The total is hard to read." Leave review_reasons empty when the details are clear.
 
 If the input is not an expense at all, set is_expense to false, explain briefly in not_expense_reason, and return no records. Otherwise set is_expense to true and not_expense_reason to "".${extra}`;
 }
