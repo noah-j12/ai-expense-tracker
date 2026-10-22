@@ -114,9 +114,9 @@ export function startLive({ onUseKeyboard }) {
 
   // While the AI talks, the mic is muted so it can't hear itself through the speaker (which made it stop
   // mid-sentence and answer its own echo). It comes back on just after the AI finishes, and anything
-  // captured in between is thrown away.
-  function muteMic(on) {
-    if (allowInterrupt()) return;
+  // captured in between is thrown away. `then` runs once the mic is really listening again.
+  function muteMic(on, then) {
+    if (allowInterrupt()) { then?.(); return; }
     clearTimeout(unmuteTimer);
     const apply = (enabled) => stream?.getAudioTracks().forEach((t) => { t.enabled = enabled; });
     if (on) {
@@ -126,9 +126,12 @@ export function startLive({ onUseKeyboard }) {
       unmuteTimer = setTimeout(() => {
         send({ type: 'input_audio_buffer.clear' });
         apply(true);
-      }, 400);
+        then?.();
+      }, 300);
     }
   }
+  // "Listening…" is only shown once OpenAI's side of the call is up; words said before that are lost.
+  let sessionReady = null;
   let savedCount = 0;
   let finishTimer = null;
   // The conversation ends after the AI's last reply (the save confirmation or "nothing saved") has
@@ -233,6 +236,12 @@ export function startLive({ onUseKeyboard }) {
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
       dc = pc.createDataChannel('oai-events');
       dc.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (err) { console.warn('live event', err); } };
+      const ready = new Promise((resolve, reject) => {
+        sessionReady = resolve;
+        setTimeout(() => reject(new LiveError('The live voice service didn\'t answer. Try again.', 'offline')), 15_000);
+      });
+      ready.catch(() => {}); // a later failure is reported by the await below, not as a stray error
+      dc.onopen = () => setTimeout(() => sessionReady?.(), 3000); // in case OpenAI's "ready" event never arrives
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       let res;
@@ -256,6 +265,7 @@ export function startLive({ onUseKeyboard }) {
         throw new LiveError(`The live voice service couldn't connect. OpenAI said: ${detail || `error ${res.status}`}`, 'fatal');
       }
       await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() });
+      await ready; // the audio line is connected and OpenAI is hearing the mic
       if (closed) return;
       meter();
       setPhase('listening', 'Listening… just say what you bought.');
@@ -271,6 +281,9 @@ export function startLive({ onUseKeyboard }) {
   function onEvent(ev) {
     if (closed) return;
     switch (ev.type) {
+      case 'session.created':
+        sessionReady?.();
+        break;
       case 'input_audio_buffer.speech_started':
         if (root.dataset.phase !== 'done') setPhase('listening', 'Listening…');
         break;
@@ -289,12 +302,15 @@ export function startLive({ onUseKeyboard }) {
         muteMic(true);
         if (root.dataset.phase !== 'done') setPhase('speaking', '');
         break;
-      case 'output_audio_buffer.stopped':
+      case 'output_audio_buffer.stopped': {
         speaking = false;
-        muteMic(false);
-        if (lastReplyId && (!ev.response_id || ev.response_id === lastReplyId)) finishSoon(700);
-        else if (!lastReplyId && !awaitingLastReply && root.dataset.phase !== 'done') setPhase('listening', 'Listening…');
+        const ending = lastReplyId && (!ev.response_id || ev.response_id === lastReplyId);
+        muteMic(false, () => {
+          if (!ending && !lastReplyId && !awaitingLastReply && !speaking && root.dataset.phase !== 'done') setPhase('listening', 'Listening…');
+        });
+        if (ending) finishSoon(700);
         break;
+      }
       case 'response.output_audio_transcript.done':
         bubble('assistant', ev.transcript?.trim());
         break;
