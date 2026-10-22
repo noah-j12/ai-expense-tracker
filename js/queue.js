@@ -114,9 +114,17 @@ export async function startQueue() {
     }
   }
   window.addEventListener('online', kick);
+  // The sheet is checked often while the app is open, and right after coming back to it (e.g. from the
+  // Google Sheets app), then again shortly after, since a change just made there can take a few seconds to
+  // reach Google. These quick checks only look at the sheet; waiting AI work keeps its own pace.
+  const checkSheet = () => { if (document.visibilityState === 'visible' && !queueState.running) syncSheets(); };
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') kick();
+    if (document.visibilityState !== 'visible') return;
+    kick();
+    setTimeout(checkSheet, 5_000);
   });
+  // Each check is 3 reads; Google allows 60 a minute per person and 300 a minute for the whole app.
+  setInterval(checkSheet, 10_000);
   setInterval(() => {
     if (document.visibilityState === 'visible') kick();
   }, 60_000);
