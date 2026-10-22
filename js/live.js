@@ -7,7 +7,7 @@ import { AIError, extractExpenses } from './ai.js';
 import { applyAIResult, createEntry, getEntry, updateEntry } from './entries.js';
 import { kick } from './queue.js';
 import { settings } from './settings.js';
-import { MicError, askingRules, audioContext, prepareAudio, releaseAudio, voiceId } from './speech.js';
+import { MicError, askingRules, audioContext, prepareAudio, releaseAudio, voiceId, voiceStyleText } from './speech.js';
 import { toast } from './ui.js';
 import { fill, formatMoney, h, icon } from './util.js';
 
@@ -32,7 +32,8 @@ ${askingRules()}
 - Once you have everything above (or they've said they don't know the rest), call log_expense. Call it once per separate purchase.
 - When log_expense returns, say its "say" text and stop. Don't ask if there's anything else.
 - If they say to cancel or that it was a mistake, say "Okay, nothing saved." and don't call log_expense.
-- Speak the user's language.`;
+- Speak the user's language.
+- How you sound: ${voiceStyleText()}`;
 }
 
 const TOOL = {

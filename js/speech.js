@@ -234,8 +234,8 @@ export const TTS_MODEL = 'gpt-4o-mini-tts';
 
 // Voices that work for both spoken replies and live conversation.
 export const VOICES = [
-  { id: 'marin', name: 'Marin', hint: 'Warm and natural. Recommended.' },
   { id: 'cedar', name: 'Cedar', hint: 'Calm and natural, deeper. Recommended.' },
+  { id: 'marin', name: 'Marin', hint: 'Warm and natural. Recommended.' },
   { id: 'coral', name: 'Coral', hint: 'Bright and friendly' },
   { id: 'sage', name: 'Sage', hint: 'Gentle and calm' },
   { id: 'shimmer', name: 'Shimmer', hint: 'Light and clear' },
@@ -248,16 +248,38 @@ export const VOICES = [
 
 // The chosen voice, or the default if it's missing or no longer offered.
 export function voiceId(v = settings().voice) {
-  return VOICES.some((x) => x.id === v?.aiVoice) ? v.aiVoice : VOICES[0].id;
+  return VOICES.some((x) => x.id === v?.aiVoice) ? v.aiVoice : 'cedar';
+}
+
+// How the voice speaks: accent and manner, sent as instructions to both the AI voice and live conversation.
+export const VOICE_STYLES = [
+  {
+    id: 'british',
+    name: 'Refined British',
+    hint: 'Calm, crisp and polished, like a high-end AI assistant',
+    text: 'Speak with a refined, crisp British accent (received pronunciation). Calm, composed and quietly confident, with polished phrasing and a subtle dry wit. Smooth, measured and clear; never rushed.',
+  },
+  { id: 'natural', name: 'Natural', hint: "The voice's own relaxed sound", text: 'Warm, relaxed and brief, like a helpful assistant confirming something quickly.' },
+  { id: 'custom', name: 'Describe your own', hint: 'e.g. "Southern drawl, friendly and laid-back"' },
+];
+
+export function voiceStyleText(v = settings().voice) {
+  if (v?.voiceStyle === 'custom' && v.voiceStyleText?.trim()) return v.voiceStyleText.trim();
+  return (VOICE_STYLES.find((s) => s.id === v?.voiceStyle) || VOICE_STYLES[0]).text;
+}
+
+export function voiceStyleName(v = settings().voice) {
+  if (v?.voiceStyle === 'custom' && v.voiceStyleText?.trim()) return 'Your own';
+  return (VOICE_STYLES.find((s) => s.id === v?.voiceStyle && s.text) || VOICE_STYLES[0]).name;
 }
 
 let playing = null; // the AudioBufferSourceNode currently speaking
 
 // Speaks with OpenAI's AI voice through the AudioContext opened during the user's tap
 // (so iOS allows playback). If the voice can't be fetched, the text is still on screen.
-// A sample (from the voice picker) passes its own voice and key and plays even with talk-back off.
+// A sample (from the voice picker) passes its own voice, style and key and plays even with talk-back off.
 // Resolves true once it has played.
-export async function speak(text, { voice, key = settings().voice?.openaiKey, sample = false } = {}) {
+export async function speak(text, { voice, style, key = settings().voice?.openaiKey, sample = false } = {}) {
   if (!text || !key || (!sample && settings().voice?.talkBack === false) || !audioCtx) return false;
   let audio;
   try {
@@ -268,7 +290,7 @@ export async function speak(text, { voice, key = settings().voice?.openaiKey, sa
         model: TTS_MODEL,
         voice: voice || voiceId(),
         input: text,
-        instructions: 'Warm, relaxed and brief, like a helpful assistant confirming something quickly.',
+        instructions: style || voiceStyleText(),
         response_format: 'mp3',
       }),
     });
