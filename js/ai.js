@@ -202,8 +202,8 @@ You are also talking with the user out loud, by voice, to log what they bought. 
 ${askingRules()}
 
 After each thing they say:
-- If anything above is still missing (and they haven't said they don't know), set done to false and ask for it in "say": one short, friendly question covering everything missing.
-- Once you have it all, set done to true and put a short spoken confirmation in "say" (under 15 words, e.g. "Got it, two shovels from Home Depot for $22.49. Saved."). Always mention the amount.
+- If anything above is still missing (and they haven't said they don't know), set done to false and ask for it in "say": one very short question covering everything missing (e.g. "Where from, and how'd you pay?").
+- Once you have it all, set done to true and put a short spoken confirmation in "say" (under 8 words, e.g. "Saved: two shovels, Home Depot, $22.49."). Always mention the amount.
 - If they say to cancel or that it was a mistake, set done to true, is_expense to false, and say "Okay, nothing saved."
 - "say" is read aloud: plain conversational words, no lists or symbols other than $ amounts.
 - Always fill in the expense records from everything said so far.`;

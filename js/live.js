@@ -7,7 +7,7 @@ import { AIError, extractExpenses } from './ai.js';
 import { applyAIResult, createEntry, getEntry, updateEntry } from './entries.js';
 import { kick } from './queue.js';
 import { settings } from './settings.js';
-import { MicError, askingRules, audioContext, errorDetail, prepareAudio, releaseAudio, setAudioSession, voiceId } from './speech.js';
+import { MicError, askingRules, audioContext, errorDetail, prepareAudio, releaseAudio, setAudioSession, SPEECH_SPEED, voiceId } from './speech.js';
 import { toast } from './ui.js';
 import { fill, formatMoney, h, icon } from './util.js';
 
@@ -23,7 +23,8 @@ const allowInterrupt = () => settings().voice?.allowInterrupt === true;
 
 function instructions() {
   return `You are the voice of an expense-tracking app. The user is telling you about something they bought so it can be logged for their bookkeeping.
-- Keep every reply short and natural: one sentence, under 20 words.
+- Be brief: as few words as possible, never more than one short sentence. No filler, no small talk, and don't repeat back what they said.
+- Talk at a quick, brisk pace.
 ${askingRules()}
 - Once you have everything above (or they've said they don't know the rest), call log_expense. Call it once per separate purchase.
 - When log_expense returns, say its "say" text and stop. Don't ask if there's anything else.
@@ -69,7 +70,7 @@ async function mintSecret(withTranscription) {
         // Only for showing the user's words on screen; the conversation works without it.
         ...(withTranscription ? { transcription: { model: LIVE_TRANSCRIBE_MODEL } } : {}),
       },
-      output: { voice: voiceId() },
+      output: { voice: voiceId(), speed: SPEECH_SPEED },
     },
     tools: [TOOL],
     tool_choice: 'auto',
@@ -130,6 +131,11 @@ export function startLive({ onUseKeyboard }) {
   }
   let savedCount = 0;
   let finishTimer = null;
+  // The conversation ends after the AI's last reply (the save confirmation or "nothing saved") has
+  // finished playing. Other speech, like "Got it, saving that" before the save, doesn't end it.
+  let awaitingLastReply = false;
+  let lastReplyId = null;
+  let speaking = false;
   const sessionTimer = setTimeout(() => close(), MAX_SESSION_MS);
 
   const orb = h('div', { class: 'talk-orb' }, icon('mic'));
@@ -274,14 +280,20 @@ export function startLive({ onUseKeyboard }) {
       case 'conversation.item.input_audio_transcription.completed':
         bubble('user', ev.transcript?.trim());
         break;
+      case 'response.created':
+        if (awaitingLastReply) { lastReplyId = ev.response?.id; awaitingLastReply = false; }
+        break;
       case 'output_audio_buffer.started':
+        speaking = true;
+        if (lastReplyId || awaitingLastReply) clearTimeout(finishTimer); // never close while it's talking
         muteMic(true);
         if (root.dataset.phase !== 'done') setPhase('speaking', '');
         break;
       case 'output_audio_buffer.stopped':
+        speaking = false;
         muteMic(false);
-        if (savedCount) finishSoon(600);
-        else if (root.dataset.phase !== 'done') setPhase('listening', 'Listening…');
+        if (lastReplyId && (!ev.response_id || ev.response_id === lastReplyId)) finishSoon(700);
+        else if (!lastReplyId && !awaitingLastReply && root.dataset.phase !== 'done') setPhase('listening', 'Listening…');
         break;
       case 'response.output_audio_transcript.done':
         bubble('assistant', ev.transcript?.trim());
@@ -303,7 +315,10 @@ export function startLive({ onUseKeyboard }) {
     if (!calls.length) {
       // The model said "Okay, nothing saved" (or similar) after a cancel.
       const said = (response?.output || []).flatMap((o) => o.content || []).map((c) => c.transcript || '').join(' ');
-      if (/nothing saved/i.test(said)) finishSoon(1500);
+      if (/nothing saved/i.test(said)) {
+        lastReplyId = response.id || 'cancel';
+        finishSoon(speaking ? 15_000 : 1200); // normally ends when the reply stops playing
+      }
       return;
     }
     setPhase('thinking', 'Saving…');
@@ -313,9 +328,10 @@ export function startLive({ onUseKeyboard }) {
       const out = await saveExpense(String(args.description || '').trim());
       send({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: call.call_id, output: JSON.stringify(out) } });
     }
+    awaitingLastReply = true;
     send({ type: 'response.create' });
     // If the confirmation never plays (no audio events), close anyway.
-    finishSoon(9000);
+    finishSoon(12_000);
   }
 
   // Claude reads the description like any typed entry, using the user's categories and rules.
@@ -327,16 +343,15 @@ export function startLive({ onUseKeyboard }) {
       const result = await extractExpenses(await getEntry(entry.id), null);
       await applyAIResult(entry.id, result);
       const x = result.expenses?.[0];
-      if (!result.is_expense || !x) return { saved: true, say: 'Saved. Please check it in the app.' };
-      const what = [x.description, x.vendor ? `from ${x.vendor}` : ''].filter(Boolean).join(' ');
-      return { saved: true, say: `Saved ${what} for ${formatMoney(x.total, x.currency)}.` };
+      if (!result.is_expense || !x) return { saved: true, say: 'Saved. Check it in the app.' };
+      return { saved: true, say: `Saved: ${[x.description, x.vendor, formatMoney(x.total, x.currency)].filter(Boolean).join(', ')}.` };
     } catch (err) {
       // Keep it: the queue finishes it when the AI is reachable again.
       await updateEntry(entry.id, (e) => { e.aiStatus = 'queued'; }, { syncSheet: false });
       kick();
       return err instanceof AIError && err.kind === 'auth'
-        ? { saved: true, say: 'Saved, but the details couldn\'t be filled in yet. Check your AI key in Settings.' }
-        : { saved: true, say: 'Saved. The details will be filled in shortly.' };
+        ? { saved: true, say: 'Saved, but check your AI key in Settings.' }
+        : { saved: true, say: 'Saved. Details coming shortly.' };
     }
   }
 

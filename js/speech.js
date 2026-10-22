@@ -242,6 +242,9 @@ export async function transcribeWithRetry(blob, tries = 3) {
 // OpenAI is retiring this model on 2027-01-06; move to its replacement before then.
 export const TTS_MODEL = 'gpt-4o-mini-tts';
 
+// How fast the AI voice talks (1 is OpenAI's normal pace).
+export const SPEECH_SPEED = 1.2;
+
 // OpenAI's error message from a failed response, when the browser is allowed to read it.
 export async function errorDetail(res) {
   const text = await res.text().catch(() => '');
@@ -289,7 +292,8 @@ export async function speak(text, { voice, key = settings().voice?.openaiKey, sa
         model: TTS_MODEL,
         voice: voice || voiceId(),
         input: text,
-        instructions: 'Warm, relaxed and brief, like a helpful assistant confirming something quickly.',
+        instructions: 'Friendly, brisk and to the point, like a quick confirmation.',
+        speed: SPEECH_SPEED,
         response_format: 'mp3',
       }),
     });
@@ -342,9 +346,9 @@ export function askingRules(s = settings()) {
   const lines = [
     'You always need the total amount and what was bought.',
     asked.length ? `Also find out ${asked.map((a) => a.phrase).join(', ')}.` : '',
-    'If any of these are missing from what they said, ask for them. Ask for everything missing in one short, natural question (for example "Where did you get it, and how did you pay?"), then follow up only on what is still missing.',
+    'If any of these are missing from what they said, ask for them all in one very short question (for example "Where from, and how\'d you pay?"), then follow up only on what is still missing.',
     askFor.includes('paymentMethod') && s.paymentMethods?.length
-      ? `When asking how they paid, offer their usual options: ${s.paymentMethods.join(', ')}.`
+      ? `Their usual payment methods are: ${s.paymentMethods.join(', ')}. Don't read this list out.`
       : '',
     askFor.includes('date') ? '' : 'Assume the purchase was today unless they say otherwise; don\'t ask about the date.',
     'Never ask about the category; that is worked out automatically.',
