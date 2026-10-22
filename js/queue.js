@@ -4,7 +4,7 @@
 
 import { AIError, extractExpenses } from './ai.js';
 import { getFile, getAllEntries, putEntry } from './db.js';
-import { applyAIResult, getEntry, markAIError, updateEntry } from './entries.js';
+import { applyAIResult, getEntry, markAIError, purgeDeleted, updateEntry } from './entries.js';
 import { settings } from './settings.js';
 import { syncSheets } from './sheets.js';
 import { transcribeWithRetry } from './speech.js';
@@ -106,6 +106,7 @@ async function processAI() {
 }
 
 export async function startQueue() {
+  purgeDeleted().catch(() => {});
   // Anything left "processing" was interrupted (app closed mid-request); put it back in line.
   for (const e of await getAllEntries()) {
     if (e.aiStatus === 'processing') {

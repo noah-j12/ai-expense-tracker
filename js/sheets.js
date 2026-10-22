@@ -6,9 +6,9 @@
 import { getFile, kvGet, kvSet, putEntry } from './db.js';
 import { ID_HEADER, SHEET_EDITABLE, fieldValue, normalizeField } from './fields.js';
 import { hasMultipleBusinesses, settings } from './settings.js';
-import { createEntry, getEntry, hasReceipt, listEntries, removeEntry } from './entries.js';
+import { createEntry, getEntry, hasReceipt, isDeleted, listEntries, removeEntry, restoreEntry } from './entries.js';
 import { blobToBase64, emit, safeFileName } from './util.js';
-import { googleDelete, googleRows, googleSetIds, googleUpsert, prepareGoogleTab, spreadsheetInfo, uploadReceipt } from './google.js';
+import { googleDelete, googleRows, googleUpsert, prepareGoogleTab, spreadsheetInfo, uploadReceipt } from './google.js';
 
 export const SCRIPT_VERSION = 2;
 export const sheetsState = { error: '', lastSync: null };
@@ -98,13 +98,13 @@ function receiptName(e, type) {
 }
 
 // ---------- Changes made in the sheet (Google sign-in only) ----------
-// The app and the sheet follow each other: edited cells update the expense, a row deleted in the sheet
-// deletes the expense, and a row typed into the sheet becomes a new expense. Rows that were already in
-// the sheet when it was connected are marked sheet-only and left alone. If the same detail changed on
-// both sides before they caught up, the app's change wins. The sheet only loses a row when the user
-// deletes that expense in the app.
+// A row belongs to the app if it has the app's hidden ID; the app's expenses and those rows are kept the
+// same set. Edited cells update the expense; a row deleted in the sheet (or whose ID is cleared) deletes
+// the expense into Recently deleted, and a row that comes back (undo in the sheet) restores it. A row with
+// an ID the app doesn't have is added from the row. Rows without an ID (history that was already there,
+// or typed in by hand) are ignored. The sheet only loses a row when the expense is deleted in the app.
 
-const SHEET_ONLY = 'sheet-only';
+const SHEET_ONLY = 'sheet-only'; // written into rows without an ID by version 1.10.0; treated as no ID
 const TEXT_FIELDS = new Set(['vendor', 'description', 'vendorDescription', 'category', 'currency', 'paymentMethod', 'notes', 'book', 'status', 'source']);
 const isBlank = (e) => !e.fields.vendor && !e.fields.description && !Number(e.fields.total);
 
@@ -126,14 +126,18 @@ function sentSnapshot(e, mapped) {
 
 async function pullFromGoogle({ spreadsheetId, tab, mapped }) {
   const where = `${spreadsheetId}|${tab}`;
-  const { idColumn, rows } = await googleRows({ spreadsheetId, tab, idHeader: ID_HEADER });
+  const { hasIdColumn, rows } = await googleRows({ spreadsheetId, tab, idHeader: ID_HEADER });
   const local = new Map((await listEntries()).map((e) => [e.id, e]));
   const expected = [...local.values()].filter((e) => e.sheet?.syncedTo === where);
-  // Rows should match but none do (the hidden ID column was cleared, say): change nothing rather than guess.
-  if (expected.length && !rows.some((r) => local.has(r.id))) return;
+  if (!hasIdColumn) {
+    // The hidden ID column itself is gone, so no row can be matched. Deleting everything would be wrong.
+    if (expected.length) {
+      throw new Error(`The hidden "${ID_HEADER}" column is missing from your sheet, so the app can't tell which rows are its own and has paused syncing. If it was deleted, undo that in the sheet.`);
+    }
+    return;
+  }
 
   const pendingDeletes = new Set((await kvGet('sheetDeletes')) || []);
-  const firstLook = (await kvGet('sheetBaseline')) !== where;
   const dateFormat = settings().dateFormat;
   const columns = mapped.filter((c) => SHEET_EDITABLE.has(c.field));
   const cellsOf = (r) => {
@@ -147,26 +151,21 @@ async function pullFromGoogle({ spreadsheetId, tab, mapped }) {
   // Columns built from other details (e.g. "vendor - description") are rewritten after a change.
   const derived = mapped.some((c) => c.field === 'vendorDescription') || (mapped.some((c) => c.field === 'total') && mapped.some((c) => c.field === 'totalNegative'));
 
-  const marks = [];
   const seen = new Set();
   for (const r of rows) {
-    if (r.id === SHEET_ONLY || pendingDeletes.has(r.id)) continue;
-    if (local.has(r.id)) {
-      seen.add(r.id);
-      await applySheetEdits(r.id, cellsOf(r), { where, mapped, derived });
-    } else if (firstLook) {
-      marks.push({ rowNumber: r.rowNumber, id: SHEET_ONLY });
-    } else {
-      const added = await addFromSheet(cellsOf(r), { where, mapped });
-      if (added) marks.push({ rowNumber: r.rowNumber, id: added.id });
+    if (!r.id || r.id === SHEET_ONLY || pendingDeletes.has(r.id) || seen.has(r.id)) continue;
+    seen.add(r.id);
+    if (!local.has(r.id)) {
+      // Its row is back (e.g. a deletion undone in the sheet): restore it, or add it from the row.
+      if (await isDeleted(r.id)) await restoreEntry(r.id, { fromSheet: true });
+      else if (!(await addFromSheet(r.id, cellsOf(r), { where, mapped }))) continue;
     }
+    await applySheetEdits(r.id, cellsOf(r), { where, mapped, derived });
   }
-  // Deleted in the sheet. If it was edited in the app since, that edit wins and the row is added back.
+  // Deleted in the sheet, or its ID cleared: into Recently deleted, where it can be restored.
   for (const e of expected) {
-    if (!seen.has(e.id) && !e.sheet.dirty) await removeEntry(e.id, { fromSheet: true });
+    if (!seen.has(e.id)) await removeEntry(e.id, { fromSheet: true });
   }
-  if (marks.length) await googleSetIds({ spreadsheetId, tab, idColumn, marks });
-  if (firstLook) await kvSet('sheetBaseline', where);
 }
 
 async function applySheetEdits(id, cells, { where, mapped, derived }) {
@@ -184,15 +183,16 @@ async function applySheetEdits(id, cells, { where, mapped, derived }) {
     changed = true;
   }
   if (!changed && e.sheet?.syncedTo === where) return;
-  e.sheet = { ...e.sheet, syncedTo: where, ...(appChanged ? {} : { sent: sentSnapshot(e, mapped) }), dirty: appChanged || (changed && derived) };
+  e.sheet = { ...e.sheet, syncedAt: e.sheet?.syncedAt || Date.now(), syncedTo: where, ...(appChanged ? {} : { sent: sentSnapshot(e, mapped) }), dirty: appChanged || (changed && derived) };
   if (changed) e.updatedAt = Date.now();
   await putEntry(e);
   if (changed) emit('entries-changed', { id });
 }
 
-async function addFromSheet(cells, { where, mapped }) {
-  if (!cells.vendor && !cells.description && !cells.total) return null; // half-typed, or not an expense row
-  const e = await createEntry({ source: 'sheet', fields: cells });
+// A row with the app's ID that the app doesn't have (e.g. after reinstalling): rebuilt from the row.
+async function addFromSheet(id, cells, { where, mapped }) {
+  if (!cells.vendor && !cells.description && !cells.total) return null;
+  const e = await createEntry({ id, source: 'sheet', fields: cells });
   e.sheet = { dirty: false, receiptUrl: '', syncedAt: Date.now(), syncedTo: where, sent: sentSnapshot(e, mapped) };
   await putEntry(e);
   return e;

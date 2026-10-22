@@ -1,19 +1,19 @@
 import { MODELS, testApiKey } from '../ai.js';
 import { clearEverything } from '../db.js';
-import { listEntries, updateEntry } from '../entries.js';
+import { deleteForever, listDeleted, listEntries, restoreEntry, updateEntry } from '../entries.js';
 import { backupFile, deliverFiles, restoreBackup } from '../exporter.js';
 import { clearBlocked, kick } from '../queue.js';
 import { CURRENCIES, DATE_FORMATS, allExportFormats, exportFormatName, settings, updateSettings } from '../settings.js';
 import { sheetsConnected, sheetsLinked } from '../sheets.js';
 import { voiceChooser } from './voice-setup.js';
 import { choiceList, choiceSheet, confirmSheet, field, nameListEditor, promptSheet, toast, toggleRow, topbar } from '../ui.js';
-import { fill, h, icon, navBack, on, uid } from '../util.js';
+import { fill, formatDate, formatMoney, h, icon, navBack, on, uid } from '../util.js';
 import { ExcelSettings } from './excel-setup.js';
 import { FormatsView } from './formats.js';
 import { SheetsSettings } from './sheets-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.10.1';
+export const APP_VERSION = '1.11.0';
 
 export function goBack(fallback = '#/settings') {
   navBack(fallback);
@@ -29,7 +29,7 @@ export function SettingsView({ params, query }) {
   if (sub === 'sheets') return SheetsSettings({ query });
   if (sub === 'excel') return ExcelSettings({ query });
   if (sub === 'formats') return FormatsView({ id, query });
-  const pages = { books, categories, payments, ai, data };
+  const pages = { books, categories, payments, ai, data, deleted };
   return (pages[sub] || main)();
 }
 
@@ -86,12 +86,47 @@ function main() {
       ),
       h('div', { class: 'section-title' }, 'Your data'),
       h('div', { class: 'list' },
+        navItem({ iconName: 'trash', label: 'Recently deleted', href: '#/settings/deleted' }),
         navItem({ iconName: 'database', label: 'Backup, restore & storage', href: '#/settings/data' }),
         navItem({ iconName: 'wand', label: 'Run setup again', onclick: () => { location.hash = '#/setup'; } }),
       ),
       h('p', { class: 'tiny muted center', style: { marginTop: '24px' } }, `AI Expense Tracker ${APP_VERSION}`),
     ];
   });
+}
+
+function deleted() {
+  const el = h('div', { class: 'page' });
+  const list = h('div', { class: 'stack' });
+  const when = (ms) => {
+    const days = Math.floor((Date.now() - ms) / 86_400_000);
+    return days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+  };
+  const load = async () => {
+    const items = await listDeleted();
+    fill(list, items.length
+      ? h('div', { class: 'list' }, items.map(({ entry: e, deletedAt, from }) => h('div', { class: 'list-item' },
+        h('div', { class: 'grow' },
+          h('div', null, [e.fields.vendor, e.fields.description].filter(Boolean).join(' · ') || 'Expense'),
+          h('div', { class: 'tiny muted' }, `${formatMoney(e.fields.total, e.fields.currency)} · ${formatDate(e.fields.date)} · deleted ${from === 'sheet' ? 'in the sheet ' : ''}${when(deletedAt)}`)),
+        h('button', { class: 'btn small', onclick: async () => {
+          await restoreEntry(e.id);
+          kick();
+          toast('Restored');
+        } }, 'Restore'),
+        h('button', { class: 'icon-btn', 'aria-label': 'Delete for good', onclick: async () => {
+          const ok = await confirmSheet({ title: 'Delete for good?', message: "It can't be brought back after this.", confirmText: 'Delete', danger: true });
+          if (ok) await deleteForever(e.id);
+        } }, icon('trash')))))
+      : h('div', { class: 'card empty' }, icon('trash'), h('p', null, 'Nothing has been deleted in the last 30 days.')));
+  };
+  fill(el,
+    topbar({ title: 'Recently deleted', back: () => goBack() }),
+    h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, "Expenses deleted in the app or in your sheet stay here for 30 days, then they're gone for good."),
+    list);
+  load();
+  const off = on('entries-changed', load);
+  return { el, destroy: off };
 }
 
 function books() {

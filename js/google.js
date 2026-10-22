@@ -320,12 +320,13 @@ export async function googleDelete({ spreadsheetId, tab, ids, idHeader }) {
 /**
  * The tab's rows as plain values (numbers as numbers, dates as serial numbers), for bringing changes made in
  * the sheet back into the app. Rows with nothing in them besides the hidden ID are left out.
- * Returns { idColumn, rows: [{ rowNumber, id, values: { [header]: value } }] }.
+ * Returns { hasIdColumn, rows: [{ rowNumber, id, values: { [header]: value } }] }.
  */
 export async function googleRows({ spreadsheetId, tab, idHeader }) {
-  const lay = await layout(spreadsheetId, tab, { idHeader });
-  const data = await api(`${SHEETS}/${spreadsheetId}/values/${encodeURIComponent(q(tab))}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`);
+  const lay = await layout(spreadsheetId, tab, { idHeader: null });
   const idCol = lay.cols.get(idHeader);
+  if (!idCol) return { hasIdColumn: false, rows: [] };
+  const data = await api(`${SHEETS}/${spreadsheetId}/values/${encodeURIComponent(q(tab))}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`);
   const rows = [];
   (data.values || []).forEach((row, i) => {
     const rowNumber = i + 1;
@@ -335,15 +336,7 @@ export async function googleRows({ spreadsheetId, tab, idHeader }) {
     for (const [header, c] of lay.cols) values[header] = row[c - 1] ?? '';
     rows.push({ rowNumber, id: String(row[idCol - 1] ?? '').trim(), values });
   });
-  return { idColumn: colName(idCol), rows };
-}
-
-// Writes IDs into the hidden ID column: marks: [{ rowNumber, id }].
-export async function googleSetIds({ spreadsheetId, tab, idColumn, marks }) {
-  await api(`${SHEETS}/${spreadsheetId}/values:batchUpdate`, {
-    method: 'POST',
-    json: { valueInputOption: 'RAW', data: marks.map((m) => ({ range: `${q(tab)}!${idColumn}${m.rowNumber}`, values: [[m.id]] })) },
-  });
+  return { hasIdColumn: true, rows };
 }
 
 // ---------- Receipt photos in Drive ----------

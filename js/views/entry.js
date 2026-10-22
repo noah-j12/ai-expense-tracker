@@ -279,13 +279,13 @@ export function EntryView({ params, query }) {
     } else if (pick === 'delete') {
       const ok = await confirmSheet({
         title: 'Delete this expense?',
-        message: `${entry.fields.vendor || 'This expense'}${entry.fields.total ? ` (${formatMoney(entry.fields.total, entry.fields.currency)})` : ''} and its receipt will be removed from this phone${sheetsConnected() ? ' and your Google Sheet' : ''}.`,
+        message: `${entry.fields.vendor || 'This expense'}${entry.fields.total ? ` (${formatMoney(entry.fields.total, entry.fields.currency)})` : ''} will be removed${sheetsConnected() ? ' from the app and your Google Sheet' : ''}. You can bring it back from Settings → Recently deleted for 30 days.`,
         confirmText: 'Delete',
         danger: true,
       });
       if (!ok) return;
       await removeEntry(id);
-      toast('Deleted');
+      toast('Deleted. You can restore it for 30 days.');
       goBack();
     }
   }
@@ -317,7 +317,7 @@ export function EntryView({ params, query }) {
       // A "by hand" entry abandoned before anything was typed shouldn't linger as a blank $0 row.
       if (isNew && !edited) {
         const e = await getEntry(id);
-        if (e && !e.fields.vendor && !e.fields.total && !e.fields.description) await removeEntry(id);
+        if (e && !e.fields.vendor && !e.fields.total && !e.fields.description) await removeEntry(id, { permanently: true });
       }
     },
   };

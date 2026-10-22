@@ -33,7 +33,8 @@ export const hasReceipt = (e) => Boolean(e.fileId) && !String(e.fileType || '').
 
 // status 'processing' is for entries the caller is about to fill in itself (e.g. a finished voice conversation).
 // audioPending: `file` is a voice recording still to be transcribed and added to inputText.
-export async function createEntry({ source, file = null, thumb = null, inputText = '', userNote = '', fields = null, status = 'queued', audioPending = false }) {
+// id: only when bringing back an expense whose row is in the sheet, so it keeps the row's ID.
+export async function createEntry({ id = null, source, file = null, thumb = null, inputText = '', userNote = '', fields = null, status = 'queued', audioPending = false }) {
   const s = settings();
   const now = Date.now();
   let fileId = null;
@@ -42,7 +43,7 @@ export async function createEntry({ source, file = null, thumb = null, inputText
     await putFile(fileId, file);
   }
   const entry = {
-    id: uid(),
+    id: id || uid(),
     createdAt: now,
     updatedAt: now,
     source, // 'photo' | 'upload' | 'voice' | 'manual'
@@ -101,20 +102,81 @@ async function doUpdate(id, change, { syncSheet = true } = {}) {
   return entry;
 }
 
+// ---------- Deleting and Recently deleted ----------
+// A deleted expense (in the app, or by deleting its row in the sheet) is kept for 30 days, photo and all,
+// so it can be restored by hand or by undoing the deletion in the sheet. After that it's gone for good.
+
+const KEEP_DELETED_DAYS = 30;
+
+const trashList = async () => (await kvGet('trash')) || [];
+
+// Deleted expenses, newest first: [{ entry, deletedAt, from: 'app' | 'sheet' }].
+export async function listDeleted() {
+  return (await trashList()).sort((a, b) => b.deletedAt - a.deletedAt);
+}
+
+async function deleteFileIfUnused(fileId) {
+  if (!fileId) return;
+  const used = (await getAllEntries()).some((e) => e.fileId === fileId) || (await trashList()).some((t) => t.entry.fileId === fileId);
+  if (!used) await deleteFile(fileId);
+}
+
 // fromSheet: the row was already deleted in the sheet, so there's nothing to remove there.
-export async function removeEntry(id, { fromSheet = false } = {}) {
+// permanently: skip Recently deleted (for a blank draft that was never filled in).
+export async function removeEntry(id, { fromSheet = false, permanently = false } = {}) {
   const entry = await getEntry(id);
   if (!entry) return;
   await deleteEntryRecord(id);
-  if (entry.fileId) {
-    const others = (await getAllEntries()).some((e) => e.fileId === entry.fileId);
-    if (!others) await deleteFile(entry.fileId);
+  if (permanently) {
+    await deleteFileIfUnused(entry.fileId);
+  } else {
+    const trash = (await trashList()).filter((t) => t.entry.id !== id);
+    await kvSet('trash', [...trash, { entry, deletedAt: Date.now(), from: fromSheet ? 'sheet' : 'app' }]);
   }
   if (entry.sheet?.syncedAt && !fromSheet) {
     const pending = (await kvGet('sheetDeletes')) || [];
     await kvSet('sheetDeletes', [...pending, id]);
   }
   emit('entries-changed', { id, deleted: true });
+}
+
+export const isDeleted = async (id) => (await trashList()).some((t) => t.entry.id === id);
+
+// Puts a deleted expense back. fromSheet: its row is back in the sheet (e.g. the deletion was undone there);
+// otherwise the row is added to the sheet again on the next sync.
+export async function restoreEntry(id, { fromSheet = false } = {}) {
+  const trash = await trashList();
+  const item = trash.find((t) => t.entry.id === id);
+  if (!item) return null;
+  const entry = item.entry;
+  // Restored by hand: it isn't in the sheet until its row is added back, so a missing row isn't a deletion.
+  entry.sheet = { ...entry.sheet, dirty: !fromSheet, ...(fromSheet ? {} : { syncedTo: null }) };
+  entry.updatedAt = Date.now();
+  await putEntry(entry);
+  await kvSet('trash', trash.filter((t) => t !== item));
+  const pending = (await kvGet('sheetDeletes')) || [];
+  if (pending.includes(id)) await kvSet('sheetDeletes', pending.filter((x) => x !== id));
+  emit('entries-changed', { id });
+  return entry;
+}
+
+export async function deleteForever(id) {
+  const trash = await trashList();
+  const item = trash.find((t) => t.entry.id === id);
+  if (!item) return;
+  await kvSet('trash', trash.filter((t) => t !== item));
+  await deleteFileIfUnused(item.entry.fileId);
+  emit('entries-changed', { id, deleted: true });
+}
+
+// Erases anything deleted more than 30 days ago.
+export async function purgeDeleted() {
+  const cutoff = Date.now() - KEEP_DELETED_DAYS * 86_400_000;
+  const trash = await trashList();
+  const old = trash.filter((t) => t.deletedAt < cutoff);
+  if (!old.length) return;
+  await kvSet('trash', trash.filter((t) => t.deletedAt >= cutoff));
+  for (const t of old) await deleteFileIfUnused(t.entry.fileId);
 }
 
 export async function requeue(id) {
