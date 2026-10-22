@@ -516,8 +516,10 @@ button.list-item:active { background: var(--surface-2); }
   background: var(--bg);
   border-radius: 22px 22px 0 0;
   padding: 10px 16px calc(var(--safe-bottom) + 16px);
+  overscroll-behavior: contain; /* scrolling past the sheet's ends doesn't move the page behind */
   animation: rise .24s cubic-bezier(.2, .8, .2, 1);
 }
+body.sheet-open { overflow: hidden; }
 .sheet .grabber { width: 40px; height: 5px; border-radius: 5px; background: var(--border); margin: 0 auto 12px; }
 .sheet h3 { font-size: 19px; margin-bottom: 6px; }
 .sheet .stack { gap: 14px; }

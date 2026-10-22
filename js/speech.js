@@ -232,6 +232,12 @@ export async function transcribeWithRetry(blob, tries = 3) {
 // OpenAI is retiring this model on 2027-01-06; move to its replacement before then.
 export const TTS_MODEL = 'gpt-4o-mini-tts';
 
+// OpenAI's error message from a failed response, when the browser is allowed to read it.
+export async function errorDetail(res) {
+  const text = await res.text().catch(() => '');
+  try { return JSON.parse(text).error?.message || text.slice(0, 200) || `error ${res.status}`; } catch { return text.slice(0, 200) || `error ${res.status}`; }
+}
+
 // Voices that work for both spoken replies and live conversation.
 export const VOICES = [
   { id: 'cedar', name: 'Cedar', hint: 'Calm and natural, deeper. Recommended.' },
@@ -255,12 +261,12 @@ export function voiceId(v = settings().voice) {
 export const VOICE_STYLES = [
   {
     id: 'british',
-    name: 'Refined British',
-    hint: 'Calm, crisp and polished, like a high-end AI assistant',
+    name: 'British',
+    hint: 'Calm, polished British accent',
     text: 'Speak with a refined, crisp British accent (received pronunciation). Calm, composed and quietly confident, with polished phrasing and a subtle dry wit. Smooth, measured and clear; never rushed.',
   },
-  { id: 'natural', name: 'Natural', hint: "The voice's own relaxed sound", text: 'Warm, relaxed and brief, like a helpful assistant confirming something quickly.' },
-  { id: 'custom', name: 'Describe your own', hint: 'e.g. "Southern drawl, friendly and laid-back"' },
+  { id: 'natural', name: 'American', hint: 'Relaxed, friendly American accent', text: 'Warm, relaxed and brief, like a helpful assistant confirming something quickly.' },
+  { id: 'custom', name: 'Describe it yourself', hint: 'For example: "Southern accent, friendly and laid-back"' },
 ];
 
 export function voiceStyleText(v = settings().voice) {
@@ -269,7 +275,7 @@ export function voiceStyleText(v = settings().voice) {
 }
 
 export function voiceStyleName(v = settings().voice) {
-  if (v?.voiceStyle === 'custom' && v.voiceStyleText?.trim()) return 'Your own';
+  if (v?.voiceStyle === 'custom' && v.voiceStyleText?.trim()) return 'Your description';
   return (VOICE_STYLES.find((s) => s.id === v?.voiceStyle && s.text) || VOICE_STYLES[0]).name;
 }
 
@@ -277,11 +283,15 @@ let playing = null; // the AudioBufferSourceNode currently speaking
 
 // Speaks with OpenAI's AI voice through the AudioContext opened during the user's tap
 // (so iOS allows playback). If the voice can't be fetched, the text is still on screen.
-// A sample (from the voice picker) passes its own voice, style and key and plays even with talk-back off.
-// Resolves true once it has played.
+// A sample (from the voice picker) passes its own voice, style and key, plays even with talk-back off,
+// and throws an error saying what went wrong. Resolves true once it has played.
 export async function speak(text, { voice, style, key = settings().voice?.openaiKey, sample = false } = {}) {
-  if (!text || !key || (!sample && settings().voice?.talkBack === false) || !audioCtx) return false;
+  if (!text || !key || (!sample && settings().voice?.talkBack === false) || !audioCtx) {
+    if (sample) throw new Error(key ? "The phone's audio didn't start. Tap ▶ again." : 'Add your OpenAI key first.');
+    return false;
+  }
   let audio;
+  let stage = 'fetch';
   try {
     const res = await fetch(`${OPENAI}/audio/speech`, {
       method: 'POST',
@@ -294,12 +304,23 @@ export async function speak(text, { voice, style, key = settings().voice?.openai
         response_format: 'mp3',
       }),
     });
-    if (!res.ok) return false;
-    audio = await audioCtx.decodeAudioData(await res.arrayBuffer());
-  } catch {
-    return false;
+    if (!res.ok) {
+      if (!sample) return false;
+      throw new Error(`OpenAI said: ${await errorDetail(res)}`);
+    }
+    const data = await res.arrayBuffer();
+    stage = 'decode';
+    audio = await audioCtx.decodeAudioData(data);
+  } catch (e) {
+    if (!sample) return false;
+    if (e.message?.startsWith('OpenAI said')) throw e;
+    if (stage === 'decode') throw new Error("Your phone couldn't play it. Try again, or restart the app.");
+    // OpenAI's error replies can't be read by browsers, so a refusal looks like a network failure.
+    if (!navigator.onLine) throw new Error("You're offline.");
+    const check = await testVoiceKey(key);
+    throw new Error(check.ok ? "OpenAI didn't send the voice. Try again in a moment." : check.message);
   }
-  await new Promise((resolve) => {
+  return new Promise((resolve) => {
     stopSpeaking();
     const src = audioCtx.createBufferSource();
     src.buffer = audio;

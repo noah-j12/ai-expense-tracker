@@ -7,7 +7,7 @@ import { AIError, extractExpenses } from './ai.js';
 import { applyAIResult, createEntry, getEntry, updateEntry } from './entries.js';
 import { kick } from './queue.js';
 import { settings } from './settings.js';
-import { MicError, askingRules, audioContext, prepareAudio, releaseAudio, voiceId, voiceStyleText } from './speech.js';
+import { MicError, askingRules, audioContext, errorDetail, prepareAudio, releaseAudio, voiceId, voiceStyleText } from './speech.js';
 import { toast } from './ui.js';
 import { fill, formatMoney, h, icon } from './util.js';
 
@@ -16,10 +16,6 @@ export const LIVE_MODEL = 'gpt-realtime-2.1-mini';
 const LIVE_TRANSCRIBE_MODEL = 'gpt-live-transcribe';
 
 // OpenAI's own explanation from an error response, if there is one.
-async function errorDetail(res) {
-  const text = await res.text().catch(() => '');
-  try { return JSON.parse(text).error?.message || text.slice(0, 200); } catch { return text.slice(0, 200); }
-}
 const OPENAI = 'https://api.openai.com/v1';
 const MAX_SESSION_MS = 4 * 60_000;
 

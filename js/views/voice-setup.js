@@ -16,7 +16,7 @@ export function voiceChooser({ read, write, model, compact = false }) {
   // Each voice has a play button for a short sample (a fraction of a cent) and is picked by tapping its name.
   const pickVoice = () => openSheet((close) => {
     const list = h('div', { class: 'list' });
-    const status = h('div', { class: 'small muted' }, 'Tap ▶ to hear a voice, then tap its name to use it.');
+    const status = h('div', { class: 'small muted' }, 'Tap ▶ to hear a voice. Tap a name to choose it.');
     let loading = null;
     const draw = () => fill(list, VOICES.map((o) => h('div', { class: 'list-item' },
       h('button', { class: 'icon-btn', 'aria-label': `Play ${o.name}`, onclick: () => play(o) },
@@ -30,29 +30,33 @@ export function voiceChooser({ read, write, model, compact = false }) {
       prepareAudio(); // during the tap, so iOS allows the sound
       loading = o.id;
       draw();
-      const ok = await speak(`Hello, I'm ${o.name}. Tell me what you bought, and I'll log it for you.`, { voice: o.id, style: voiceStyleText(read()), key: read().openaiKey, sample: true });
+      fill(status, 'Tap ▶ to hear a voice. Tap a name to choose it.');
+      try {
+        await speak(`Hello, I'm ${o.name}. Tell me what you bought, and I'll log it for you.`, { voice: o.id, style: voiceStyleText(read()), key: read().openaiKey, sample: true });
+      } catch (e) {
+        if (loading === o.id) fill(status, h('span', { style: { color: 'var(--danger)' } }, `Couldn't play ${o.name}: ${e.message}`));
+      }
       if (loading === o.id) loading = null;
       draw();
-      if (!ok && !loading) fill(status, h('span', { style: { color: 'var(--danger)' } }, "Couldn't play the sample. Check your internet connection and OpenAI key."));
     };
     draw();
-    return h('div', { class: 'stack' }, h('h3', null, 'Voice'), h('div', { class: 'small muted' }, `Samples use your accent & style: ${voiceStyleName(read())}.`), status, list,
+    return h('div', { class: 'stack' }, h('h3', null, 'Voice'), status, list,
       h('button', { class: 'btn block', onclick: close }, 'Done'));
   }, { onClose: () => { stopSpeaking(); releaseAudio(); } });
 
   const pickStyle = async () => {
     const v = read();
     const id = await choiceSheet({
-      title: 'Accent & style',
+      title: 'Accent',
       options: VOICE_STYLES.map((s) => ({ label: s.name, hint: s.hint, value: s.id, selected: s.id === (v.voiceStyle || 'british') })),
     });
     if (!id) return;
     if (id === 'custom') {
       const text = await promptSheet({
-        title: 'How should it sound?',
-        message: 'Describe the accent and manner in plain words. Try a sample afterwards under Voice.',
+        title: 'How should it talk?',
+        message: 'Describe it in your own words.',
         value: v.voiceStyleText || '',
-        placeholder: 'e.g. Southern drawl, friendly and laid-back',
+        placeholder: 'Southern accent, friendly and laid-back',
       });
       if (!text) return;
       await write((x) => { x.voiceStyle = 'custom'; x.voiceStyleText = text; });
@@ -133,11 +137,11 @@ export function voiceChooser({ read, write, model, compact = false }) {
       selected !== 'keyboard' && !pending ? h('div', { class: 'list' },
         h('button', { class: 'list-item', onclick: pickVoice }, icon('speaker'), h('div', { class: 'grow' }, 'Voice'),
           h('span', { class: 'value small' }, VOICES.find((o) => o.id === voiceId(v)).name), h('span', { class: 'chev' }, icon('chevron'))),
-        h('button', { class: 'list-item', onclick: pickStyle }, icon('sparkle'), h('div', { class: 'grow' }, 'Accent & style'),
+        h('button', { class: 'list-item', onclick: pickStyle }, icon('sparkle'), h('div', { class: 'grow' }, 'Accent'),
           h('span', { class: 'value small' }, voiceStyleName(v)), h('span', { class: 'chev' }, icon('chevron'))),
         selected === 'live' ? toggleRow({
           label: 'Let me interrupt it',
-          hint: 'Best with headphones or AirPods. On the phone speaker the mic can hear the AI and cut it off, so this is off by default.',
+          hint: 'Lets you talk over it. Best with headphones or AirPods; on the speaker it can hear itself and stop mid-sentence.',
           checked: v.allowInterrupt === true,
           onChange: (on) => write((x) => { x.allowInterrupt = on; }),
         }) : null,

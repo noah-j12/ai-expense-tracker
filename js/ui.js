@@ -20,12 +20,44 @@ export function openSheet(build, { onClose } = {}) {
     if (closed) return;
     closed = true;
     backdrop.remove();
+    if (!root.children.length) document.body.classList.remove('sheet-open');
     onClose?.();
   };
   const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'grabber' }));
   const backdrop = h('div', { class: 'sheet-backdrop', onclick: (e) => { if (e.target === backdrop) close(); } }, sheet);
+
+  // Drag down to close, starting anywhere while the sheet is scrolled to the top.
+  // A drag that starts upward scrolls the sheet's content instead.
+  let startY = null;
+  let dy = 0;
+  const settle = (to, then) => {
+    sheet.style.transition = 'transform .2s ease-out';
+    sheet.style.transform = to;
+    setTimeout(() => { sheet.style.transition = ''; then?.(); }, 200);
+  };
+  sheet.addEventListener('touchstart', (e) => {
+    startY = sheet.scrollTop <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null;
+    dy = 0;
+  }, { passive: true });
+  sheet.addEventListener('touchmove', (e) => {
+    if (startY === null) return;
+    dy = e.touches[0].clientY - startY;
+    if (dy < 0 && !sheet.style.transform) { startY = null; return; }
+    e.preventDefault();
+    sheet.style.transform = `translateY(${Math.max(0, dy)}px)`;
+  }, { passive: false });
+  sheet.addEventListener('touchend', () => {
+    if (startY === null) return;
+    startY = null;
+    if (dy > 90) settle('translateY(100%)', close);
+    else if (sheet.style.transform) settle('', () => { sheet.style.transform = ''; });
+  });
+  // Touches on the dimmed area never scroll the page behind.
+  backdrop.addEventListener('touchmove', (e) => { if (!sheet.contains(e.target)) e.preventDefault(); }, { passive: false });
+
   sheet.append(build(close));
   root.append(backdrop);
+  document.body.classList.add('sheet-open');
   return close;
 }
 
