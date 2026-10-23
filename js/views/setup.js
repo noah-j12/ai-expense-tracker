@@ -3,7 +3,7 @@
 import { MODELS, testApiKey } from '../ai.js';
 import { restoreBackup } from '../exporter.js';
 import { kick } from '../queue.js';
-import { CATEGORY_PRESETS, DEFAULT_PAYMENT_METHODS, EXPORT_FORMATS, replaceSettings, settings } from '../settings.js';
+import { CATEGORY_PRESETS, DEFAULT_PAYMENT_METHODS, EXCEL_WORKBOOK, EXPORT_FORMATS, replaceSettings, settings } from '../settings.js';
 import { choiceList, field, tagEditor, toast } from '../ui.js';
 import { h, icon, isIOS, isStandalone, shareGlyph } from '../util.js';
 import { VOICE_MODES } from '../speech.js';
@@ -85,7 +85,7 @@ export function SetupView() {
         h('div', { class: 'list' },
           h('div', { class: 'list-item' }, icon('camera'), h('div', null, h('b', null, 'Scan or speak'), h('div', { class: 'small muted' }, 'One tap, then get on with your day.'))),
           h('div', { class: 'list-item' }, icon('cloudOff'), h('div', null, h('b', null, 'Works offline'), h('div', { class: 'small muted' }, 'Entries wait safely until you have signal.'))),
-          h('div', { class: 'list-item' }, icon('sheet'), h('div', null, h('b', null, 'Ready for your accountant'), h('div', { class: 'small muted' }, 'Goes into Excel or Google Sheets, or a spreadsheet for whoever does your books.'))),
+          h('div', { class: 'list-item' }, icon('sheet'), h('div', null, h('b', null, 'Ready for your accountant'), h('div', { class: 'small muted' }, 'Goes into Google Sheets, or a spreadsheet for whoever does your books.'))),
         ),
         h('p', { class: 'small muted' }, 'Setup takes about two minutes. You can change anything later.'),
       ),
@@ -126,7 +126,7 @@ export function SetupView() {
 
   function books() {
     const options = [
-      { id: 'excel', name: 'Excel', hint: 'Add to a workbook you already have, or start one' },
+      ...(EXCEL_WORKBOOK ? [{ id: 'excel', name: 'Excel', hint: 'Add to a workbook you already have, or start one' }] : []),
       { id: 'sheets', name: 'Google Sheets', hint: 'Expenses appear in your sheet automatically' },
       ...EXPORT_FORMATS.filter((f) => f.id !== 'csv').map((f) => ({ id: f.id, name: f.name, hint: 'Export a file to import' })),
       { id: 'csv', name: 'My accountant / something else', hint: 'Export a spreadsheet whenever you need one' },

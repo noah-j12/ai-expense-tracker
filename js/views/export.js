@@ -1,6 +1,6 @@
 import { hasReceipt, listEntries, markExported, needsAttention } from '../entries.js';
 import { deliverFiles, exportFile, receiptFiles, supportsExcel } from '../exporter.js';
-import { allExportFormats, businessName, exportFormatName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
+import { EXCEL_WORKBOOK, allExportFormats, businessName, exportFormatName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
 import { sheetsConnected } from '../sheets.js';
 import { choiceList, field, toast, toggleRow, topbar } from '../ui.js';
 import { formatDate, formatDateTime, formatMoney, fill, h, icon, on, toISODate } from '../util.js';
@@ -32,7 +32,7 @@ function ranges() {
 function destinations() {
   const s = settings();
   const items = [];
-  if (s.excel.tab) {
+  if (EXCEL_WORKBOOK && s.excel.tab) {
     items.push(h('button', { class: 'list-item', onclick: () => { location.hash = '#/settings/excel'; } }, icon('file'),
       h('div', { class: 'grow' }, h('div', null, h('b', null, 'Update my Excel file')),
         h('div', { class: 'tiny muted' }, s.excel.lastUpdated ? `Last updated ${formatDateTime(s.excel.lastUpdated)}` : s.excel.fileName)),

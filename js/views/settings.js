@@ -3,7 +3,7 @@ import { clearEverything } from '../db.js';
 import { deleteForever, listDeleted, listEntries, restoreEntry, updateEntry } from '../entries.js';
 import { backupFile, deliverFiles, restoreBackup } from '../exporter.js';
 import { clearBlocked, kick } from '../queue.js';
-import { CURRENCIES, DATE_FORMATS, allExportFormats, exportFormatName, settings, updateSettings } from '../settings.js';
+import { CURRENCIES, DATE_FORMATS, EXCEL_WORKBOOK, allExportFormats, exportFormatName, settings, updateSettings } from '../settings.js';
 import { sheetsConnected, sheetsLinked } from '../sheets.js';
 import { voiceChooser } from './voice-setup.js';
 import { choiceList, choiceSheet, confirmSheet, field, nameListEditor, promptSheet, toast, toggleRow, topbar } from '../ui.js';
@@ -13,7 +13,7 @@ import { FormatsView } from './formats.js';
 import { SheetsSettings } from './sheets-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.11.2';
+export const APP_VERSION = '1.11.3';
 
 export function goBack(fallback = '#/settings') {
   navBack(fallback);
@@ -57,7 +57,7 @@ function main() {
       h('div', { class: 'section-title' }, 'Where your expenses go'),
       h('div', { class: 'list' },
         navItem({ iconName: 'sheet', label: 'Google Sheets', value: sheetsConnected() ? 'Connected' : sheetsLinked() ? 'Finish setup' : 'Off', href: '#/settings/sheets' }),
-        navItem({ iconName: 'file', label: 'Excel file', value: s.excel.tab ? 'Set up' : 'Off', href: '#/settings/excel' }),
+        EXCEL_WORKBOOK ? navItem({ iconName: 'file', label: 'Excel file', value: s.excel.tab ? 'Set up' : 'Off', href: '#/settings/excel' }) : null,
         navItem({ iconName: 'share', label: 'Export formats', value: custom ? `${custom} custom` : null, href: '#/settings/formats' }),
       ),
       h('div', { class: 'section-title' }, 'Exports'),
@@ -335,7 +335,7 @@ function data() {
 
   el.append(
     topbar({ title: 'Your data', back: () => goBack() }),
-    h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'Everything is stored on this phone. Back up now and then (or connect Google Sheets or Excel) so nothing is lost if the phone is.'),
+    h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'Everything is stored on this phone. Back up now and then (or connect Google Sheets) so nothing is lost if the phone is.'),
     h('div', { class: 'list' },
       h('div', { class: 'list-item' }, icon('receipt'), h('div', { class: 'grow' }, 'Expenses'), count),
       h('div', { class: 'list-item' }, icon('database'), h('div', { class: 'grow' }, 'Storage used'), storage),

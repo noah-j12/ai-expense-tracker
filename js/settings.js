@@ -54,6 +54,10 @@ export const CATEGORY_PRESETS = [
 
 export const DEFAULT_PAYMENT_METHODS = ['Business card', 'Personal card', 'Cash', 'Check', 'Bank transfer'];
 
+// "Update my Excel file" (keeping the user's own workbook up to date) is built but not offered for now.
+// Set to true to bring it back in setup, Settings and Export.
+export const EXCEL_WORKBOOK = false;
+
 export const EXPORT_FORMATS = [
   { id: 'csv', name: 'Spreadsheet / my accountant', hint: 'Excel, Google Sheets, Numbers or any other software' },
 ];
