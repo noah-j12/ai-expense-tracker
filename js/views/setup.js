@@ -85,7 +85,7 @@ export function SetupView() {
         h('div', { class: 'list' },
           h('div', { class: 'list-item' }, icon('camera'), h('div', null, h('b', null, 'Scan or speak'), h('div', { class: 'small muted' }, 'One tap, then get on with your day.'))),
           h('div', { class: 'list-item' }, icon('cloudOff'), h('div', null, h('b', null, 'Works offline'), h('div', { class: 'small muted' }, 'Entries wait safely until you have signal.'))),
-          h('div', { class: 'list-item' }, icon('sheet'), h('div', null, h('b', null, 'Ready for your accountant'), h('div', { class: 'small muted' }, 'Works with Excel, Google Sheets, QuickBooks, Xero and Wave.'))),
+          h('div', { class: 'list-item' }, icon('sheet'), h('div', null, h('b', null, 'Ready for your accountant'), h('div', { class: 'small muted' }, 'Goes into Excel or Google Sheets, or a spreadsheet for whoever does your books.'))),
         ),
         h('p', { class: 'small muted' }, 'Setup takes about two minutes. You can change anything later.'),
       ),

@@ -55,10 +55,15 @@ export const CATEGORY_PRESETS = [
 export const DEFAULT_PAYMENT_METHODS = ['Business card', 'Personal card', 'Cash', 'Check', 'Bank transfer'];
 
 export const EXPORT_FORMATS = [
+  { id: 'csv', name: 'Spreadsheet / my accountant', hint: 'Excel, Google Sheets, Numbers or any other software' },
+];
+
+// QuickBooks, Xero and Wave exports are built (see exporter.js and the help text in views/export.js) but not
+// offered until they've been tried in the real software. To offer one, move it into EXPORT_FORMATS above.
+export const UNTESTED_EXPORT_FORMATS = [
   { id: 'quickbooks', name: 'QuickBooks Online', hint: 'Banking → Upload transactions' },
   { id: 'xero', name: 'Xero', hint: 'Bank account → Import a statement' },
   { id: 'wave', name: 'Wave', hint: 'Transactions → Upload a bank statement' },
-  { id: 'csv', name: 'Spreadsheet / my accountant', hint: 'Excel, Google Sheets, Numbers or any other software' },
 ];
 
 export const DATE_FORMATS = [
@@ -127,6 +132,8 @@ export async function loadSettings() {
   // Before voice modes existed, having an OpenAI key meant spoken conversations.
   if (saved?.voice?.openaiKey && !saved.voice.mode) current.voice.mode = 'spoken';
   if (!current.businesses.some((b) => b.id === current.activeBusinessId)) current.activeBusinessId = current.businesses[0].id;
+  // A format that's no longer offered falls back to the plain spreadsheet.
+  if (!allExportFormats().some((f) => f.id === current.exportFormat)) current.exportFormat = 'csv';
   return current;
 }
 
