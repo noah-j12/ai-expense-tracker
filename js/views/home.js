@@ -3,9 +3,9 @@ import { kvGet, kvSet } from '../db.js';
 import { displayTitle, entryState, listEntries, needsAttention } from '../entries.js';
 import { queueState } from '../queue.js';
 import { businessName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
-import { sheetsConnected, sheetsLinked, sheetsState } from '../sheets.js';
+import { sheetsConnected, sheetsLinked, sheetsState, syncSheets } from '../sheets.js';
 import { voiceEnabled, voiceMode } from '../speech.js';
-import { choiceSheet } from '../ui.js';
+import { choiceSheet, toast } from '../ui.js';
 import { formatDate, formatMoney, fill, h, icon, isIOS, isStandalone, on, shareGlyph, toISODate } from '../util.js';
 
 const PAGE = 40;
@@ -46,6 +46,15 @@ export function HomeView() {
   const el = h('div', { class: 'page' });
   const dynamic = h('div');
   const listWrap = h('div');
+  // Checks the sheet for changes now instead of waiting for the next automatic check. Made once, so it keeps
+  // spinning while the list redraws.
+  const refreshButton = h('button', { class: 'icon-btn refresh-btn', 'aria-label': 'Check your sheet for changes', onclick: async () => {
+    if (refreshButton.classList.contains('busy')) return;
+    refreshButton.classList.add('busy');
+    await syncSheets();
+    refreshButton.classList.remove('busy');
+    if (sheetsState.error) toast(`Couldn't check your sheet: ${sheetsState.error}`, { error: true });
+  } }, icon('refresh'));
   let entries = [];
   let query = '';
   let shown = PAGE;
@@ -138,7 +147,7 @@ export function HomeView() {
     fill(listWrap, 
       summary,
       review.length ? h('div', null, h('div', { class: 'section-title' }, 'Needs your review'), h('div', { class: 'list' }, review.slice(0, 10).map(entryRow))) : null,
-      h('div', { class: 'section-title' }, 'Recent'),
+      h('div', { class: 'section-title with-action' }, 'Recent', sheetsConnected() ? refreshButton : null),
       entries.length > 5 ? h('label', { class: 'search' }, icon('search'), searchInput) : null,
       h('div', { id: 'recent-list' }),
     );

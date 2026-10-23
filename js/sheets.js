@@ -198,11 +198,16 @@ async function addFromSheet(id, cells, { where, mapped }) {
   return e;
 }
 
-let syncing = false;
+let inFlight = null;
 
-export async function syncSheets() {
-  if (!sheetsConnected() || syncing) return;
-  syncing = true;
+// One sync at a time; asking while one is running waits for that one.
+export function syncSheets() {
+  if (!sheetsConnected()) return Promise.resolve();
+  if (!inFlight) inFlight = runSync().finally(() => { inFlight = null; });
+  return inFlight;
+}
+
+async function runSync() {
   const { tab, columns } = settings().sheets;
   const mapped = columns.filter((c) => c.field);
   const receiptHeader = mapped.find((c) => c.field === 'receipt')?.header || null;
@@ -284,7 +289,6 @@ export async function syncSheets() {
   } catch (err) {
     sheetsState.error = err.offline ? '' : err.message;
   } finally {
-    syncing = false;
     emit('sheets-changed');
   }
 }
