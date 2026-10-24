@@ -3,17 +3,17 @@ import { clearEverything } from '../db.js';
 import { deleteForever, listDeleted, listEntries, restoreEntry, updateEntry } from '../entries.js';
 import { backupFile, deliverFiles, restoreBackup } from '../exporter.js';
 import { clearBlocked, kick } from '../queue.js';
-import { CURRENCIES, DATE_FORMATS, EXCEL_WORKBOOK, allExportFormats, exportFormatName, settings, updateSettings } from '../settings.js';
+import { CURRENCIES, DATE_FORMATS, EXCEL_WORKBOOK, allExportFormats, exportFormatName, paymentInfo, settings, updateSettings } from '../settings.js';
 import { sheetsConnected, sheetsLinked } from '../sheets.js';
 import { voiceChooser } from './voice-setup.js';
-import { choiceList, choiceSheet, confirmSheet, field, nameListEditor, promptSheet, toast, toggleRow, topbar } from '../ui.js';
+import { choiceList, choiceSheet, confirmSheet, field, nameListEditor, openSheet, promptSheet, toast, toggleRow, topbar } from '../ui.js';
 import { fill, formatDate, formatMoney, h, icon, navBack, on, uid } from '../util.js';
 import { ExcelSettings } from './excel-setup.js';
 import { FormatsView } from './formats.js';
 import { SheetsSettings } from './sheets-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.11.3';
+export const APP_VERSION = '1.12.0';
 
 export function goBack(fallback = '#/settings') {
   navBack(fallback);
@@ -210,23 +210,77 @@ function categories() {
   return { el };
 }
 
+// Name, card endings and other names for one payment method. Resolves { name, last4, aliases },
+// 'remove', or null if cancelled.
+function editPaymentSheet(name = '') {
+  const info = paymentInfo(name);
+  const nameInput = h('input', { class: 'input', value: name, placeholder: 'e.g. Bank card 1', autocapitalize: 'words' });
+  const cardInput = h('input', { class: 'input', value: info.last4.join(', '), placeholder: 'e.g. 4821', inputmode: 'numeric' });
+  const aliasInput = h('input', { class: 'input', value: info.aliases.join(', '), placeholder: 'e.g. farm card, my Visa', autocapitalize: 'none' });
+  const error = h('div', { class: 'small', style: { color: 'var(--danger)' } });
+  return new Promise((resolve) => {
+    let answered = false;
+    const done = (v, close) => { answered = true; close(); resolve(v); };
+    openSheet((close) => h('div', { class: 'stack' },
+      h('h3', null, name ? 'Edit payment method' : 'Add a payment method'),
+      field('Name', nameInput, 'What you call it when you talk to the app.'),
+      field('Card ending in (optional)', cardInput, 'The last 4 digits. Receipts showing them are matched to this card. Separate several with commas.'),
+      field('Other names you might say (optional)', aliasInput, 'Separate them with commas.'),
+      error,
+      h('button', { class: 'btn primary block', onclick: () => {
+        const n = nameInput.value.trim();
+        if (!n) { fill(error, 'Give it a name.'); return; }
+        if (n !== name && settings().paymentMethods.includes(n)) { fill(error, 'You already have one with that name.'); return; }
+        const last4 = [...new Set(cardInput.value.match(/\d{4}/g) || [])];
+        const aliases = [...new Set(aliasInput.value.split(',').map((a) => a.trim()).filter(Boolean))];
+        done({ name: n, last4, aliases }, close);
+      } }, 'Save'),
+      name ? h('button', { class: 'btn danger block', onclick: () => done('remove', close) }, 'Remove') : null,
+      h('button', { class: 'btn ghost block', onclick: () => done(null, close) }, 'Cancel'),
+    ), { onClose: () => { if (!answered) resolve(null); } });
+  });
+}
+
 function payments() {
-  const s = settings();
-  const el = h('div', { class: 'page' },
-    topbar({ title: 'Payment methods', back: () => goBack() }),
-    h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'Include the last 4 digits of each card (like "Amex ending 1004") and the AI can match receipts to the right card.'),
-    nameListEditor({
-      items: s.paymentMethods,
-      noun: 'payment method',
-      addLabel: 'Add a payment method',
-      placeholder: 'e.g. Chase Visa ending 4821',
-      onChange: async (items, { renamed }) => {
-        await updateSettings({ paymentMethods: items });
-        if (renamed) await renameInEntries('paymentMethod', ...renamed);
-      },
-    }),
-  );
-  return { el };
+  const el = h('div', { class: 'page' });
+  const save = async (oldName, result) => {
+    if (!result) return;
+    if (result === 'remove') {
+      await updateSettings((d) => { d.paymentMethods = d.paymentMethods.filter((m) => m !== oldName); delete d.paymentDetails[oldName]; });
+      return;
+    }
+    const { name, last4, aliases } = result;
+    await updateSettings((d) => {
+      // A card ending belongs to one payment method only.
+      for (const m of Object.keys(d.paymentDetails)) {
+        if (m !== oldName) d.paymentDetails[m] = { ...d.paymentDetails[m], last4: (d.paymentDetails[m].last4 || []).filter((x) => !last4.includes(x)) };
+      }
+      if (oldName) {
+        d.paymentMethods = d.paymentMethods.map((m) => (m === oldName ? name : m));
+        delete d.paymentDetails[oldName];
+      } else {
+        d.paymentMethods.push(name);
+      }
+      d.paymentDetails[name] = { last4, aliases };
+    });
+    if (oldName && oldName !== name) await renameInEntries('paymentMethod', oldName, name);
+  };
+  return withRefresh(el, () => {
+    const s = settings();
+    return [
+      topbar({ title: 'Payment methods', back: () => goBack() }),
+      h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'Give each one a name you\'d say out loud, like "Bank card 1". Add the card\'s last 4 digits and receipts are matched to it automatically.'),
+      s.paymentMethods.length
+        ? h('div', { class: 'list' }, s.paymentMethods.map((m) => {
+          const { last4, aliases } = paymentInfo(m);
+          const sub = [last4.length ? `Card ending ${last4.join(', ')}` : '', aliases.length ? `Also "${aliases.join('", "')}"` : ''].filter(Boolean).join(' · ');
+          return h('button', { class: 'list-item', onclick: async () => save(m, await editPaymentSheet(m)) },
+            icon('card'), h('div', { class: 'grow' }, h('div', null, m), sub ? h('div', { class: 'tiny muted' }, sub) : null), h('span', { class: 'chev' }, icon('chevron')));
+        }))
+        : h('div', { class: 'card pad muted small center' }, 'No payment methods yet.'),
+      h('button', { class: 'btn block', style: { marginTop: '12px' }, onclick: async () => save('', await editPaymentSheet()) }, icon('plus'), 'Add a payment method'),
+    ];
+  });
 }
 
 function ai() {

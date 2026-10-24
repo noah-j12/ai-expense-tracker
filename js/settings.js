@@ -105,6 +105,8 @@ function defaults() {
     categoryPreset: 'small-business',
     categories: [...CATEGORY_PRESETS[0].categories],
     paymentMethods: [...DEFAULT_PAYMENT_METHODS],
+    // Per payment method name: card endings shown on receipts and other names the user might say.
+    paymentDetails: {}, // { [name]: { last4: ['4821'], aliases: ['farm card'] } }
     currency: guessCurrency(),
     dateFormat: guessDateFormat(),
     exportFormat: 'csv',
@@ -160,6 +162,27 @@ export async function replaceSettings(next) {
   current = next;
   await kvSet('settings', current);
   emit('settings-changed', current);
+}
+
+// Card endings and other names for a payment method.
+export function paymentInfo(name, s = current) {
+  const d = s.paymentDetails?.[name] || {};
+  return { last4: d.last4 || [], aliases: d.aliases || [] };
+}
+
+// The payment method a card ending belongs to, if the user has said.
+export function methodForCard(last4, s = current) {
+  return s.paymentMethods.find((m) => paymentInfo(m, s).last4.includes(last4)) || '';
+}
+
+// e.g. 'Business card (card ending 4821; they may call it "farm card")', for the AI.
+export function describePaymentMethod(name, s = current, { cards = true } = {}) {
+  const { last4, aliases } = paymentInfo(name, s);
+  const bits = [
+    cards && last4.length ? `card ending ${last4.join(' or ')}` : '',
+    aliases.length ? `they may call it ${aliases.map((a) => `"${a}"`).join(' or ')}` : '',
+  ].filter(Boolean);
+  return bits.length ? `${name} (${bits.join('; ')})` : name;
 }
 
 export function businessName(id) {

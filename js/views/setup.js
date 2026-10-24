@@ -116,10 +116,10 @@ export function SetupView() {
   }
 
   function payments() {
-    const editor = tagEditor({ items: draft.paymentMethods, placeholder: 'e.g. Amex ending 1004', onChange: (items) => { draft.paymentMethods = items; } });
+    const editor = tagEditor({ items: draft.paymentMethods, placeholder: 'e.g. Bank card 1', onChange: (items) => { draft.paymentMethods = items; } });
     return frame({
       title: 'How do you pay?',
-      lead: 'The AI matches the receipt to one of these. Adding the last 4 digits of each card makes the match more accurate.',
+      lead: "Name each way you pay, the way you'd say it out loud. Later, in Settings → Payment methods, you can add each card's last 4 digits so receipts are matched automatically.",
       content: [editor, h('button', { class: 'btn ghost', onclick: () => { draft.paymentMethods = [...DEFAULT_PAYMENT_METHODS]; editor.setItems(draft.paymentMethods); } }, 'Reset to defaults')],
     });
   }

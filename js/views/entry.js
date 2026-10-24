@@ -1,6 +1,6 @@
 import { MODELS } from '../ai.js';
 import { getFile } from '../db.js';
-import { getEntry, hasReceipt, removeEntry, requeue, updateEntry } from '../entries.js';
+import { assignCard, getEntry, hasReceipt, removeEntry, requeue, updateEntry } from '../entries.js';
 import { deliverFiles, receiptFiles } from '../exporter.js';
 import { kick, queueState } from '../queue.js';
 import { CURRENCIES, businessName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
@@ -109,6 +109,11 @@ export function EntryView({ params, query }) {
         h('div', { class: 'row', style: { marginTop: '8px', gap: '8px' } },
           h('button', { class: 'btn small', onclick: retry }, icon('refresh'), 'Try again'))));
     }
+    if (e.unknownCard && !e.fields.paymentMethod) {
+      return h('div', { class: 'banner warn' }, icon('card'), h('div', { class: 'body' },
+        h('b', null, `Paid with a card ending in ${e.unknownCard}. `), 'Which of your payment methods is that? You only need to do this once.',
+        h('div', { style: { marginTop: '8px' } }, h('button', { class: 'btn small', onclick: pickCard }, 'Choose'))));
+    }
     if (!e.reviewed && e.reviewReasons?.length) {
       return h('div', { class: 'banner warn' }, icon('alert'), h('div', { class: 'body' },
         h('b', null, 'Please double-check:'),
@@ -167,7 +172,9 @@ export function EntryView({ params, query }) {
       newLabel: '＋ New payment method…',
       onPick: async (name, { isNew } = {}) => {
         if (isNew) await updateSettings((d) => { d.paymentMethods.push(name); });
-        queueSave('paymentMethod', name);
+        // Picking one for a receipt with an unknown card also remembers that card.
+        if (name && entry.unknownCard) await assignCard(entry.unknownCard, name);
+        else queueSave('paymentMethod', name);
       },
     });
 
@@ -245,6 +252,19 @@ export function EntryView({ params, query }) {
     await flush();
     await updateEntry(id, (e) => { e.reviewed = true; });
     goBack();
+  }
+
+  async function pickCard() {
+    const last4 = entry.unknownCard;
+    const pick = await choiceSheet({
+      title: `Card ending in ${last4}`,
+      options: [...settings().paymentMethods.map((m) => ({ label: m, value: m })), { label: 'A new payment method…', value: '\u0000new', icon: 'plus' }],
+    });
+    if (!pick) return;
+    const name = pick === '\u0000new' ? await promptSheet({ title: 'Name this card', message: 'Use the name you\'d say out loud.', placeholder: 'e.g. Business Visa' }) : pick;
+    if (!name) return;
+    await assignCard(last4, name);
+    toast(`Saved. Cards ending in ${last4} are now "${name}".`);
   }
 
   async function markReviewed() {

@@ -1,7 +1,7 @@
 // Voice conversations: record with automatic end-of-speech detection, transcribe with OpenAI
 // (Claude doesn't take audio), and talk back with OpenAI's AI voice.
 
-import { settings } from './settings.js';
+import { describePaymentMethod, settings } from './settings.js';
 
 export const TRANSCRIBE_MODEL = 'gpt-transcribe';
 const OPENAI = 'https://api.openai.com/v1';
@@ -347,8 +347,8 @@ export function askingRules(s = settings()) {
     'You always need the total amount and what was bought.',
     asked.length ? `Also find out ${asked.map((a) => a.phrase).join(', ')}.` : '',
     'If any of these are missing from what they said, ask for them all in one very short question (for example "Where from, and how\'d you pay?"), then follow up only on what is still missing.',
-    askFor.includes('paymentMethod') && s.paymentMethods?.length
-      ? `Their usual payment methods are: ${s.paymentMethods.join(', ')}. Don't read this list out.`
+    s.paymentMethods?.length
+      ? `Their payment methods are: ${s.paymentMethods.map((m) => describePaymentMethod(m, s, { cards: false })).join('; ')}. When they name one, or one of its nicknames, that's the one they used. Don't read this list out.`
       : '',
     askFor.includes('date') ? '' : 'Assume the purchase was today unless they say otherwise; don\'t ask about the date.',
     'Never ask about the category; that is worked out automatically.',

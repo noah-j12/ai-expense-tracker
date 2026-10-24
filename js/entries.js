@@ -1,7 +1,7 @@
 // Expense records: creating, editing, deleting and applying AI results.
 
 import { deleteEntryRecord, deleteFile, getAllEntries, getEntry, kvGet, kvSet, putEntry, putFile } from './db.js';
-import { settings } from './settings.js';
+import { methodForCard, settings, updateSettings } from './settings.js';
 import { emit, parseISODate, round2, toISODate, uid } from './util.js';
 
 export function blankFields(createdAt = Date.now()) {
@@ -207,9 +207,14 @@ function applyFields(entry, x, model) {
     tip: round2(x.tip),
     currency,
     category,
-    paymentMethod: (x.payment_method || '').trim(),
+    paymentMethod: !s.paymentMethods.length || s.paymentMethods.includes((x.payment_method || '').trim()) ? (x.payment_method || '').trim() : '',
     notes: (x.notes || '').trim(),
   };
+  // A card ending the app knows picks its payment method; an unknown one is asked about once, then remembered.
+  const last4 = String(x.card_last4 || '').replace(/\D/g, '').slice(-4);
+  const known = last4.length === 4 ? methodForCard(last4, s) : '';
+  if (known) entry.fields.paymentMethod = known;
+  entry.unknownCard = last4.length === 4 && !known && !entry.fields.paymentMethod ? last4 : '';
   entry.confidence = x.confidence || '';
   entry.reviewReasons = Array.isArray(x.review_reasons) ? x.review_reasons.filter(Boolean) : [];
   if (!category && s.categories.length) entry.reviewReasons.push('No category fit, so please pick one.');
@@ -273,10 +278,26 @@ export async function markAIError(id, message) {
 }
 
 // What to show in lists: null means "all good, nothing to flag".
+// The user said which payment method a card ending belongs to: remember it, and fill in every expense
+// that was waiting on that card.
+export async function assignCard(last4, name) {
+  await updateSettings((d) => {
+    if (!d.paymentMethods.includes(name)) d.paymentMethods.push(name);
+    const info = d.paymentDetails[name] || {};
+    d.paymentDetails[name] = { ...info, last4: [...new Set([...(info.last4 || []), last4])] };
+  });
+  for (const e of await getAllEntries()) {
+    if (e.unknownCard === last4 && !e.fields.paymentMethod) {
+      await updateEntry(e.id, (x) => { x.fields.paymentMethod = name; x.unknownCard = ''; });
+    }
+  }
+}
+
 export function entryState(e) {
   if (e.aiStatus === 'queued') return { key: 'queued', label: 'Waiting', cls: '', icon: 'clock' };
   if (e.aiStatus === 'processing') return { key: 'processing', label: 'Reading…', cls: '', icon: 'sparkle' };
   if (e.aiStatus === 'error') return { key: 'error', label: 'Needs attention', cls: 'danger', icon: 'alert' };
+  if (e.unknownCard && !e.fields.paymentMethod) return { key: 'review', label: 'Which card?', cls: 'warn', icon: 'card' };
   if (!e.reviewed && e.reviewReasons?.length) return { key: 'review', label: 'Check this', cls: 'warn', icon: 'alert' };
   return null;
 }

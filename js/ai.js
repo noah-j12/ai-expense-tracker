@@ -3,7 +3,7 @@
 
 import Anthropic from '../vendor/anthropic-sdk.mjs';
 import { FIELDS } from './fields.js';
-import { settings } from './settings.js';
+import { describePaymentMethod, settings } from './settings.js';
 import { askingRules } from './speech.js';
 import { blobToBase64, toISODate } from './util.js';
 
@@ -58,7 +58,7 @@ function buildSchema(categories) {
           additionalProperties: false,
           required: [
             'date', 'vendor', 'description', 'total', 'subtotal', 'tax', 'tip', 'currency',
-            'category', 'payment_method', 'notes', 'confidence', 'review_reasons',
+            'category', 'payment_method', 'card_last4', 'notes', 'confidence', 'review_reasons',
           ],
           properties: {
             date: { type: 'string', format: 'date' },
@@ -71,6 +71,7 @@ function buildSchema(categories) {
             currency: { type: 'string', description: 'ISO 4217 code' },
             category: categoryField,
             payment_method: { type: 'string' },
+            card_last4: { type: 'string', description: 'Last 4 digits of the card shown, or ""' },
             notes: { type: 'string' },
             confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
             review_reasons: { type: 'array', items: { type: 'string' } },
@@ -86,7 +87,7 @@ function buildSystemPrompt(s) {
     ? `Allowed categories: ${s.categories.join('; ')}. Use "${UNCATEGORIZED}" only when none fit.`
     : 'The user has no category list yet; use a short, conventional bookkeeping category.';
   const paymentLine = s.paymentMethods.length
-    ? `The user's payment methods: ${s.paymentMethods.join('; ')}.`
+    ? `The user's payment methods: ${s.paymentMethods.map((m) => describePaymentMethod(m, s)).join('; ')}.`
     : 'The user has not listed payment methods.';
   const extra = s.ai.instructions?.trim()
     ? `\n\nThe user's own instructions (follow them unless they conflict with the format):\n${s.ai.instructions.trim()}`
@@ -106,7 +107,8 @@ Fields:
 - subtotal, tax, tip: as shown; 0 when not shown.
 - currency: default ${s.currency} unless the receipt clearly shows another currency.
 - category: ${categoryLine}
-- payment_method: ${paymentLine} If one clearly matches, use its exact name. Otherwise describe what is shown (e.g. "Visa ending 4821"), or "" if unknown.
+- payment_method: ${paymentLine} If one matches (by the card ending shown on a receipt, or by the name or nickname the user says), use its exact name. If a card is shown that isn't one of theirs, or nothing matches, use "".
+- card_last4: the last 4 digits of the card shown on the receipt or said by the user, or "" if none.
 - notes: anything an accountant would want that doesn't fit elsewhere, such as an invoice number, the last four digits of a card, or who a meal was with when stated. Brief; "" if nothing.
 - confidence and review_reasons: be honest, but only flag real doubts the person should check: an amount or detail you couldn't read clearly, totals that don't add up, a store or amount you had to guess, or something unusual (cut-off receipt, handwritten tip). Don't flag routine choices such as picking the category, matching a payment method, using the recorded date for a spoken note, or tidying a store name. Write each reason in plain words for the person, e.g. "The total is hard to read." Leave review_reasons empty when the details are clear.
 
