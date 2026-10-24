@@ -4,10 +4,11 @@ import { MODELS, testApiKey } from '../ai.js';
 import { restoreBackup } from '../exporter.js';
 import { kick } from '../queue.js';
 import { CATEGORY_PRESETS, DEFAULT_PAYMENT_METHODS, EXCEL_WORKBOOK, EXPORT_FORMATS, replaceSettings, settings } from '../settings.js';
-import { choiceList, field, tagEditor, toast } from '../ui.js';
+import { choiceList, choiceSheet, field, tagEditor, toast } from '../ui.js';
 import { h, icon, isIOS, isStandalone, shareGlyph } from '../util.js';
 import { VOICE_MODES } from '../speech.js';
 import { voiceChooser } from './voice-setup.js';
+import { BACKUP_MODES } from './backup-setup.js';
 
 export const CONSOLE_URL = 'https://console.anthropic.com/';
 
@@ -33,7 +34,10 @@ export function SetupView() {
   // Where expenses end up: 'excel' | 'sheets' | an export format id | 'later'.
   let destination = 'later';
 
-  const steps = [welcome, categories, payments, books, ai, voice, finish];
+  // Suggested, not required: Google Drive is picked to start with and can be changed.
+  if (!draft.backup || draft.backup.mode === 'off') draft.backup = { mode: 'drive' };
+
+  const steps = [welcome, categories, payments, books, backup, ai, voice, finish];
 
   function frame({ title, lead, content, next = 'Continue', onNext, skip, hideBack }) {
     const nextBtn = h('button', { class: 'btn primary', onclick: async () => {
@@ -91,7 +95,14 @@ export function SetupView() {
       ),
       h('div', { class: 'footer', style: { flexDirection: 'column' } },
         h('button', { class: 'btn primary block', onclick: () => go(1) }, 'Get started'),
-        h('button', { class: 'btn ghost block', onclick: () => restoreInput.click() }, 'Restore from a backup'),
+        h('button', { class: 'btn ghost block', onclick: async () => {
+          const from = await choiceSheet({ title: 'Restore from a backup', options: [
+            { label: 'From Google Drive', hint: 'A backup this app saved automatically', value: 'drive', icon: 'cloud' },
+            { label: 'From a file', hint: 'A backup you saved yourself, e.g. in iCloud Drive', value: 'file', icon: 'file' },
+          ] });
+          if (from === 'drive') location.hash = '#/settings/backup?restore=1';
+          if (from === 'file') restoreInput.click();
+        } }, 'Restore from a backup'),
         restoreInput,
       ),
     );
@@ -143,6 +154,14 @@ export function SetupView() {
           draft.exportFormat = ['excel', 'sheets', 'later'].includes(id) ? 'csv' : id;
         },
       }),
+    });
+  }
+
+  function backup() {
+    return frame({
+      title: 'Keep a backup?',
+      lead: 'Everything is saved on this phone. A backup means nothing is lost if the phone is. You can change this later in Settings.',
+      content: choiceList({ options: BACKUP_MODES, value: draft.backup.mode, onChange: (id) => { draft.backup = { ...draft.backup, mode: id }; } }),
     });
   }
 
@@ -208,7 +227,10 @@ export function SetupView() {
       sheets: 'Next: connect your Google Sheet',
       later: 'Saved on this phone; export or connect a spreadsheet anytime',
     }[destination] || `Exports for ${EXPORT_FORMATS.find((f) => f.id === destination)?.name}`;
-    const nextRoute = { excel: '#/settings/excel', sheets: '#/settings/sheets' }[destination] || '#/';
+    // Google Sheets' sign-in covers the backup too; otherwise a Drive backup needs its own sign-in next.
+    const needsBackupSignIn = draft.backup.mode === 'drive' && destination !== 'sheets' && !draft.sheets.google?.refreshToken;
+    const nextRoute = { excel: '#/settings/excel', sheets: '#/settings/sheets' }[destination] || (needsBackupSignIn ? '#/settings/backup' : '#/');
+    const backupLine = { drive: needsBackupSignIn ? 'Backup: Google Drive (sign in next)' : 'Backup: Google Drive', remind: 'Backup: a weekly reminder', off: 'No backup' }[draft.backup.mode];
     return frame({
       title: 'You\'re all set',
       lead: draft.ai.apiKey
@@ -219,6 +241,7 @@ export function SetupView() {
         h('div', { class: 'list' },
           h('div', { class: 'list-item' }, icon('tag'), h('div', { class: 'grow' }, `${draft.categories.length} categories`)),
           h('div', { class: 'list-item' }, icon('share'), h('div', { class: 'grow' }, where)),
+          h('div', { class: 'list-item' }, icon('cloud'), h('div', { class: 'grow' }, backupLine)),
           h('div', { class: 'list-item' }, icon('key'), h('div', { class: 'grow' }, draft.ai.apiKey ? 'AI connected' : 'AI not connected yet')),
           h('div', { class: 'list-item' }, icon('mic'), h('div', { class: 'grow' }, `Voice: ${VOICE_MODES.find((m) => m.id === (draft.voice.openaiKey ? draft.voice.mode : 'keyboard'))?.name}`)),
         ),

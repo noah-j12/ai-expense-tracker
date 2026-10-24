@@ -34,6 +34,11 @@ function toBlob(canvas, quality) {
 }
 
 // Returns { blob, thumb } where thumb is a small data: URL for list rows.
+// The list thumbnail for a saved photo (used when restoring a backup that left thumbnails out).
+export async function makeThumb(blob) {
+  return draw(await loadImage(blob), THUMB_EDGE).toDataURL('image/jpeg', 0.7);
+}
+
 export async function prepareImage(file) {
   const img = await loadImage(file);
   const blob = await toBlob(draw(img, MAX_EDGE), QUALITY);

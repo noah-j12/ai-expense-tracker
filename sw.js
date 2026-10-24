@@ -1,7 +1,7 @@
 // Service worker: keeps a copy of the app on the phone so it opens with no signal.
 // When you publish changes, bump VERSION so phones pick up the new files.
 
-const VERSION = '1.13.0';
+const VERSION = '1.14.0';
 const CACHE = `ai-expense-tracker-${VERSION}`;
 
 const ASSETS = [
@@ -10,6 +10,7 @@ const ASSETS = [
   'manifest.webmanifest',
   'css/app.css',
   'js/app.js',
+  'js/backup.js',
   'js/ai.js',
   'js/capture.js',
   'js/db.js',
@@ -31,6 +32,7 @@ const ASSETS = [
   'js/util.js',
   'js/xlsx.js',
   'js/zip.js',
+  'js/views/backup-setup.js',
   'js/views/entry.js',
   'js/views/excel-setup.js',
   'js/views/export.js',

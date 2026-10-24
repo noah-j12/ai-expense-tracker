@@ -1,7 +1,9 @@
 import { addManually, openSpeakSheet, startScan, startUpload } from '../capture.js';
 import { kvGet, kvSet } from '../db.js';
 import { displayTitle, entryState, listEntries, needsAttention } from '../entries.js';
+import { backupMode, backupState, googleSignedIn, reminderDue } from '../backup.js';
 import { queueState } from '../queue.js';
+import { saveByHand } from './backup-setup.js';
 import { businessName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
 import { sheetsConnected, sheetsLinked, sheetsState, syncSheets } from '../sheets.js';
 import { voiceEnabled, voiceMode } from '../speech.js';
@@ -9,6 +11,7 @@ import { choiceSheet, toast } from '../ui.js';
 import { formatDate, formatMoney, fill, h, icon, isIOS, isStandalone, on, shareGlyph, toISODate } from '../util.js';
 
 const PAGE = 40;
+let reminderSnoozed = false; // "Later" on the backup reminder, until the app is next opened
 
 export function entryRow(e) {
   const st = entryState(e);
@@ -103,6 +106,22 @@ export function HomeView() {
       out.push(h('div', { class: 'banner' }, icon('cloudOff'), h('div', { class: 'body' },
         h('b', null, `${waiting} waiting`), ` to be read. ${waiting === 1 ? 'It' : 'They'}'ll go through when you're back online. Nothing is lost.`)));
     }
+    if (backupMode() === 'drive' && !googleSignedIn()) {
+      out.push(h('div', { class: 'banner warn' }, icon('cloud'), h('div', { class: 'body' },
+        h('b', null, 'Backup needs a Google sign-in. '), 'Until then, nothing is backed up.',
+        h('div', null, h('button', { class: 'btn small', onclick: () => { location.hash = '#/settings/backup'; } }, 'Sign in')))));
+    } else if (backupMode() === 'drive' && backupState.error) {
+      out.push(h('div', { class: 'banner warn' }, icon('cloud'), h('div', { class: 'body' },
+        h('b', null, "Backup didn't finish. "), backupState.error,
+        h('div', null, h('button', { class: 'btn small', onclick: () => { location.hash = '#/settings/backup'; } }, 'Open backup')))));
+    }
+    if (reminderDue() && entries.length && !reminderSnoozed) {
+      out.push(h('div', { class: 'banner' }, icon('cloud'), h('div', { class: 'body' },
+        h('b', null, 'Time to save a backup. '), 'Choose Save to Files, then iCloud Drive.',
+        h('div', { class: 'row', style: { gap: '8px', marginTop: '6px' } },
+          h('button', { class: 'btn small primary', onclick: saveByHand }, 'Save a backup'),
+          h('button', { class: 'btn small ghost', onclick: () => { reminderSnoozed = true; render(); } }, 'Later')))));
+    }
     if (sheetsLinked() && !sheetsConnected()) {
       out.push(h('div', { class: 'banner warn' }, icon('sheet'), h('div', { class: 'body' },
         h('b', null, 'Google Sheets isn\'t finished. '), 'Expenses won\'t go into your sheet until you pick the tab and columns.',
@@ -189,6 +208,7 @@ export function HomeView() {
   const offs = [
     on('entries-changed', load),
     on('queue-changed', render),
+    on('backup-changed', render),
     on('settings-changed', render),
     on('sheets-changed', render),
   ];

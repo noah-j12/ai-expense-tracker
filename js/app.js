@@ -28,7 +28,8 @@ function parseHash() {
 async function render() {
   const { path, query } = parseHash();
   recordNavigation(location.hash);
-  if (!settings().setupDone && path !== '/setup') {
+  // Restoring from Google Drive (on a new phone) happens before setup.
+  if (!settings().setupDone && path !== '/setup' && path !== '/settings/backup') {
     location.replace('#/setup');
     return;
   }

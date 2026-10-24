@@ -119,10 +119,10 @@ async function api(url, { method = 'GET', json, body, headers = {} } = {}, retri
     const data = await res.json().catch(() => ({}));
     const msg = data.error?.message || `error ${res.status}`;
     console.warn('Google API error', res.status, url, msg);
-    if (res.status === 403 || res.status === 404) {
+    if (url.startsWith(SHEETS) && (res.status === 403 || res.status === 404)) {
       throw new GoogleError(`The app can't open that spreadsheet (Google said: ${msg}). Try choosing it again in Settings → Google Sheets.`);
     }
-    throw new GoogleError(`Google Sheets: ${msg}`);
+    throw new GoogleError(`${url.startsWith(SHEETS) ? 'Google Sheets' : 'Google Drive'}: ${msg}`);
   }
   return res.status === 204 ? null : res.json();
 }
@@ -371,6 +371,64 @@ export async function uploadReceipt(blob, name) {
     if (!err.offline) await updateSettings((d) => { d.sheets.google = { ...d.sheets.google, folderId: '' }; });
     throw err;
   }
+}
+
+// ---------- Backup in Drive ----------
+// A folder holding backup.json (expenses and settings) and each receipt photo as its own file, so a backup
+// only uploads photos it hasn't sent before. The app can only see files it made itself (drive.file).
+
+const BACKUP_FOLDER = 'AI Expense Tracker Backup';
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+
+async function driveFiles(query, pageToken = '') {
+  const data = await api(`${DRIVE}?q=${encodeURIComponent(query)}&fields=nextPageToken,files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=1000${pageToken ? `&pageToken=${pageToken}` : ''}`);
+  const files = data.files || [];
+  return data.nextPageToken ? [...files, ...(await driveFiles(query, data.nextPageToken))] : files;
+}
+
+// Returns { id, created } or null when create is false and there's no folder yet.
+export async function backupFolder({ create = true } = {}) {
+  const [found] = await driveFiles(`name='${BACKUP_FOLDER}' and mimeType='${FOLDER_MIME}' and trashed=false`);
+  if (found) return { id: found.id, created: false };
+  if (!create) return null;
+  const folder = await api(`${DRIVE}?fields=id`, { method: 'POST', json: { name: BACKUP_FOLDER, mimeType: FOLDER_MIME } });
+  return { id: folder.id, created: true };
+}
+
+// Every file in the backup folder: [{ id, name, modifiedTime }], newest first.
+export const backupFolderFiles = (folderId) => driveFiles(`'${folderId}' in parents and trashed=false`);
+
+// Creates a file in the folder, or replaces the contents of fileId. Returns { id }.
+export async function saveDriveFile({ fileId, name, folderId, blob }) {
+  const boundary = 'aiet' + Math.random().toString(36).slice(2);
+  const meta = JSON.stringify(fileId ? {} : { name, parents: [folderId] });
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n`,
+    `--${boundary}\r\nContent-Type: ${blob.type || 'application/octet-stream'}\r\n\r\n`,
+    blob,
+    `\r\n--${boundary}--`,
+  ]);
+  return api(`${DRIVE_UPLOAD}${fileId ? `/${fileId}` : ''}?uploadType=multipart&fields=id`, {
+    method: fileId ? 'PATCH' : 'POST',
+    body,
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+  });
+}
+
+export async function downloadDriveFile(id) {
+  const auth = await accessToken();
+  let res;
+  try {
+    res = await fetch(`${DRIVE}/${id}?alt=media`, { headers: { Authorization: `Bearer ${auth}` } });
+  } catch {
+    throw new GoogleError('Could not reach Google. Check your connection.', { offline: true });
+  }
+  if (!res.ok) throw new GoogleError("Couldn't download the backup from Google Drive. Try again.");
+  return res.blob();
+}
+
+export async function deleteDriveFile(id) {
+  await api(`${DRIVE}/${id}`, { method: 'DELETE' }).catch(() => {}); // already gone is fine
 }
 
 // ---------- Choosing an existing sheet ----------

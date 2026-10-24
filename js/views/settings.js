@@ -11,9 +11,10 @@ import { fill, formatDate, formatMoney, h, icon, navBack, on, uid } from '../uti
 import { ExcelSettings } from './excel-setup.js';
 import { FormatsView } from './formats.js';
 import { SheetsSettings } from './sheets-setup.js';
+import { BACKUP_MODES, BackupSettings } from './backup-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.13.0';
+export const APP_VERSION = '1.14.0';
 
 export function goBack(fallback = '#/settings') {
   navBack(fallback);
@@ -29,6 +30,7 @@ export function SettingsView({ params, query }) {
   if (sub === 'sheets') return SheetsSettings({ query });
   if (sub === 'excel') return ExcelSettings({ query });
   if (sub === 'formats') return FormatsView({ id, query });
+  if (sub === 'backup') return BackupSettings({ query });
   const pages = { books, categories, payments, ai, data, deleted };
   return (pages[sub] || main)();
 }
@@ -86,6 +88,7 @@ function main() {
       ),
       h('div', { class: 'section-title' }, 'Your data'),
       h('div', { class: 'list' },
+        navItem({ iconName: 'cloud', label: 'Backup', value: BACKUP_MODES.find((m) => m.id === (s.backup?.mode || 'off'))?.name, href: '#/settings/backup' }),
         navItem({ iconName: 'trash', label: 'Recently deleted', href: '#/settings/deleted' }),
         navItem({ iconName: 'database', label: 'Backup, restore & storage', href: '#/settings/data' }),
         navItem({ iconName: 'wand', label: 'Run setup again', onclick: () => { location.hash = '#/setup'; } }),
@@ -169,7 +172,7 @@ async function removeBook(b) {
   let moveTo = others[0].id;
   if (affected.length) {
     moveTo = await choiceSheet({
-      title: `Move ${affected.length} expense${affected.length === 1 ? '' : 's'} from ${b.name || 'these books'} toâ€¦`,
+      title: `Move ${affected.length} expense${affected.length === 1 ? '' : 's'} from ${b.name || 'these books'} to…`,
       options: others.map((o) => ({ label: o.name || 'Main books', value: o.id, icon: 'building' })),
     });
     if (!moveTo) return;
@@ -301,7 +304,7 @@ function ai() {
       fill(status, h('span', { class: 'muted' }, 'Key removed.'));
       return;
     }
-    fill(status, h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Checking your keyâ€¦'));
+    fill(status, h('span', { class: 'row' }, h('span', { class: 'spinner' }), 'Checking your key…'));
     const res = await testApiKey(key, settings().ai.model);
     if (!res.ok) {
       fill(status, h('span', { style: { color: 'var(--danger)' } }, res.message));
@@ -357,8 +360,8 @@ function voiceSection() {
 
 function data() {
   const el = h('div', { class: 'page' });
-  const storage = h('span', { class: 'value small' }, 'â€¦');
-  const count = h('span', { class: 'value small' }, 'â€¦');
+  const storage = h('span', { class: 'value small' }, '…');
+  const count = h('span', { class: 'value small' }, '…');
   let includeKey = false;
 
   (async () => {
@@ -389,7 +392,7 @@ function data() {
 
   el.append(
     topbar({ title: 'Your data', back: () => goBack() }),
-    h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'Everything is stored on this phone. Back up now and then (or connect Google Sheets) so nothing is lost if the phone is.'),
+    h('p', { class: 'small muted', style: { margin: '0 4px 12px' } }, 'Everything is stored on this phone. Turn on Backup in Settings, or save a backup here now and then, so nothing is lost if the phone is.'),
     h('div', { class: 'list' },
       h('div', { class: 'list-item' }, icon('receipt'), h('div', { class: 'grow' }, 'Expenses'), count),
       h('div', { class: 'list-item' }, icon('database'), h('div', { class: 'grow' }, 'Storage used'), storage),

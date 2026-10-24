@@ -519,8 +519,9 @@ export function SheetsSettings({ query } = {}) {
         } }, 'Re-send all expenses'),
         h('button', { class: 'btn danger', onclick: async () => {
           if (!(await confirmSheet({ title: 'Disconnect Google Sheets?', message: 'Your sheet keeps everything already in it. New expenses will only be saved on this phone.', confirmText: 'Disconnect', danger: true }))) return;
-          if (google()) await signOutGoogle();
-          await updateSettings(resetSheets);
+          const backupNeedsGoogle = settings().backup?.mode === 'drive';
+          if (google() && !backupNeedsGoogle) await signOutGoogle();
+          await updateSettings((d) => { const keep = backupNeedsGoogle ? d.sheets.google.refreshToken : ''; resetSheets(d); d.sheets.google.refreshToken = keep; });
           flow.step = null;
           flow.autoTried = false;
           render();

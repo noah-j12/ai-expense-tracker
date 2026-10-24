@@ -25,6 +25,7 @@ A phone web app for logging expenses: snap a receipt, upload a photo or PDF, or 
 | **QuickBooks Online / Xero / Wave** | Built but hidden until tried in the real software (`UNTESTED_EXPORT_FORMATS` in `js/settings.js`): a CSV in each one's bank-import format (spending as negative amounts). |
 | **Spreadsheet / accountant** | Export a standard spreadsheet as Excel (.xlsx) or CSV. |
 | **Custom layout** | Settings → Export formats: upload a CSV/Excel file or paste column names, match columns once, and exports come out in exactly that layout. |
+| **Backup** | Settings → Backup (also a setup step): automatic to the user's Google Drive using the same Google sign-in as Sheets (`drive.file` only). A folder holds `backup.json` (settings, expenses, Recently deleted; no AI keys or Google sign-in) and each receipt photo once. Backs up after changes, at most hourly while the app is open. Restore from Drive works on a new phone before setup. "Remind me" instead shows a weekly reminder to save a backup file to iCloud Drive or Files (no free automatic iCloud option exists for web apps). |
 
 Wherever the user's existing data has categories or payment methods (in a mapped column), the app offers to reuse those names.
 

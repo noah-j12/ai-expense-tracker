@@ -123,6 +123,9 @@ function defaults() {
     // Excel: the workbook tab and columns used by "Update my Excel file".
     excel: { fileName: '', tab: '', columns: [], lastUpdated: null },
     askNoteAfterScan: false,
+    // Automatic backup: 'drive' (Google Drive, automatic), 'remind' (a reminder to save one to iCloud Drive
+    // or Files), or 'off'.
+    backup: { mode: 'off' },
   };
 }
 

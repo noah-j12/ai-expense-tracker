@@ -1,10 +1,11 @@
 // Builds files for accounting software, spreadsheets (CSV or Excel), the user's own Excel workbook,
 // receipt photo bundles and full backups, and hands them to the iPhone share sheet.
 
-import { getAllEntries, getFile, putEntry, putFile, clearEverything } from './db.js';
+import { getAllEntries, getFile, kvGet, kvSet, putEntry, putFile, clearEverything } from './db.js';
+import { makeThumb } from './image.js';
 import { hasReceipt } from './entries.js';
 import { ID_HEADER, fieldLabel, fieldValue, formatExportDate } from './fields.js';
-import { hasMultipleBusinesses, settings, replaceSettings } from './settings.js';
+import { hasMultipleBusinesses, loadSettings, settings, replaceSettings } from './settings.js';
 import { base64ToBlob, blobToBase64, safeFileName } from './util.js';
 import { addSheet, buildWorkbook, openWorkbook, readSheetRows, findHeaderRow, saveWorkbook, upsertRows } from './xlsx.js';
 
@@ -181,18 +182,69 @@ export async function deliverFiles(files, title) {
 
 // ---------- Backup & restore ----------
 
-export async function backupFile({ includeKey = false } = {}) {
+// Everything needed to rebuild the app on another phone: settings, expenses and Recently deleted.
+// AI keys only when asked for; the Google sign-in never (the phone restoring signs in itself).
+// photos: include receipt photos in the file (a manual backup) or leave them out (Drive keeps them separately,
+// and thumbnails are rebuilt from the photos on restore).
+export async function backupData({ includeKey = false, photos = true } = {}) {
   const s = structuredClone(settings());
-  if (!includeKey) s.ai.apiKey = '';
-  const entries = await getAllEntries();
-  const files = [];
-  for (const id of new Set(entries.map((e) => e.fileId).filter(Boolean))) {
-    const blob = await getFile(id);
-    if (blob) files.push({ id, type: blob.type, data: await blobToBase64(blob) });
+  if (!includeKey) {
+    s.ai.apiKey = '';
+    s.voice.openaiKey = '';
   }
-  const payload = { app: 'ai-expense-tracker', version: 1, createdAt: new Date().toISOString(), settings: s, entries, files };
+  s.sheets.google = { ...s.sheets.google, refreshToken: '' };
+  const trash = (await kvGet('trash')) || [];
+  let entries = await getAllEntries();
+  const files = [];
+  if (photos) {
+    for (const id of new Set([...entries, ...trash.map((t) => t.entry)].map((e) => e.fileId).filter(Boolean))) {
+      const blob = await getFile(id);
+      if (blob) files.push({ id, type: blob.type, data: await blobToBase64(blob) });
+    }
+  } else {
+    const slim = (e) => ({ ...e, thumb: e.fileId ? null : e.thumb });
+    entries = entries.map(slim);
+    trash.forEach((t) => { t.entry = slim(t.entry); });
+  }
+  return { app: 'ai-expense-tracker', version: 2, createdAt: new Date().toISOString(), settings: s, entries, trash, files };
+}
+
+export async function backupFile({ includeKey = false } = {}) {
+  const payload = await backupData({ includeKey });
   const stamp = new Date().toISOString().slice(0, 10);
   return new File([JSON.stringify(payload)], `AI Expense Tracker backup ${stamp}.json`, { type: 'application/json' });
+}
+
+// Replaces everything on this phone with a backup. photos: Map of photo id -> Blob for photos kept outside
+// the backup (Drive). Keys and the Google sign-in already on this phone are kept when the backup has none.
+export async function restoreData(data, { photos = new Map() } = {}) {
+  if (data?.app !== 'ai-expense-tracker' || !Array.isArray(data.entries)) {
+    throw new Error('That file is not an AI Expense Tracker backup.');
+  }
+  const now = settings();
+  const keep = { apiKey: now.ai.apiKey, openaiKey: now.voice?.openaiKey, refreshToken: now.sheets.google?.refreshToken };
+  await clearEverything();
+  for (const f of data.files || []) await putFile(f.id, base64ToBlob(f.data, f.type));
+  for (const [id, blob] of photos) await putFile(id, blob);
+  const withThumb = async (e) => {
+    if (e.fileId && !e.thumb && String(e.fileType || '').startsWith('image/')) {
+      const blob = await getFile(e.fileId);
+      if (blob) e.thumb = await makeThumb(blob).catch(() => null);
+    }
+    return e;
+  };
+  for (const e of data.entries) await putEntry(await withThumb(e));
+  const trash = data.trash || [];
+  for (const t of trash) await withThumb(t.entry);
+  await kvSet('trash', trash);
+  const next = data.settings;
+  if (!next.ai.apiKey) next.ai.apiKey = keep.apiKey;
+  if (next.voice && !next.voice.openaiKey) next.voice.openaiKey = keep.openaiKey || '';
+  next.sheets.google = { ...next.sheets.google, refreshToken: next.sheets.google?.refreshToken || keep.refreshToken || '' };
+  next.setupDone = true;
+  await replaceSettings(next);
+  await loadSettings(); // fills in anything newer than the backup with its default
+  return data.entries.length;
 }
 
 export async function restoreBackup(file) {
@@ -202,16 +254,5 @@ export async function restoreBackup(file) {
   } catch {
     throw new Error('That file is not a valid backup.');
   }
-  if (data?.app !== 'ai-expense-tracker' || !Array.isArray(data.entries)) {
-    throw new Error('That file is not an AI Expense Tracker backup.');
-  }
-  const keepKey = settings().ai.apiKey;
-  await clearEverything();
-  for (const f of data.files || []) await putFile(f.id, base64ToBlob(f.data, f.type));
-  for (const e of data.entries) await putEntry(e);
-  const next = data.settings;
-  if (!next.ai.apiKey) next.ai.apiKey = keepKey;
-  next.setupDone = true;
-  await replaceSettings(next);
-  return data.entries.length;
+  return restoreData(data);
 }

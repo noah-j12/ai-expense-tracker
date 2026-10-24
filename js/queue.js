@@ -7,6 +7,7 @@ import { getFile, getAllEntries, putEntry } from './db.js';
 import { applyAIResult, getEntry, markAIError, purgeDeleted, updateEntry } from './entries.js';
 import { settings } from './settings.js';
 import { syncSheets } from './sheets.js';
+import { maybeBackup, watchForChanges } from './backup.js';
 import { transcribeWithRetry } from './speech.js';
 import { emit } from './util.js';
 
@@ -33,6 +34,7 @@ async function run() {
       await processAI();
       await syncSheets();
     } while (again);
+    await maybeBackup();
   } catch (err) {
     console.error('Queue error', err);
   } finally {
@@ -107,6 +109,7 @@ async function processAI() {
 
 export async function startQueue() {
   purgeDeleted().catch(() => {});
+  await watchForChanges();
   // Anything left "processing" was interrupted (app closed mid-request); put it back in line.
   for (const e of await getAllEntries()) {
     if (e.aiStatus === 'processing') {
