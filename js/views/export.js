@@ -1,5 +1,6 @@
+import { exportFilter } from '../ai.js';
 import { hasReceipt, listEntries, markExported, needsAttention } from '../entries.js';
-import { deliverFiles, exportFile, receiptFiles, supportsExcel } from '../exporter.js';
+import { deliverFiles, exportFile, exportHeader, receiptFiles, supportsExcel } from '../exporter.js';
 import { EXCEL_WORKBOOK, allExportFormats, businessName, exportFormatName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
 import { sheetsConnected } from '../sheets.js';
 import { choiceList, field, toast, toggleRow, topbar } from '../ui.js';
@@ -46,18 +47,38 @@ function destinations() {
   return items.length ? [h('div', { class: 'section-title', style: { marginTop: '0' } }, 'Your spreadsheets'), h('div', { class: 'list' }, items)] : [];
 }
 
+function emptyFilter() {
+  return { paymentMethods: [], categories: [], books: [], vendors: [], words: [], min: 0, max: 0, review: 'any', columns: [], notUnderstood: '' };
+}
+
+// Applied by the app itself, so what goes in the file is exactly what the filter says.
+function matchesFilter(e, f) {
+  const has = (text, word) => String(text || '').toLowerCase().includes(word.toLowerCase());
+  const total = Number(e.fields.total) || 0;
+  return (!f.paymentMethods.length || f.paymentMethods.includes(e.fields.paymentMethod))
+    && (!f.categories.length || f.categories.includes(e.fields.category || 'Uncategorized'))
+    && (!f.books.length || f.books.includes(e.businessId))
+    && (!f.vendors.length || f.vendors.some((v) => has(e.fields.vendor, v)))
+    && (!f.words.length || f.words.every((w) => has(e.fields.description, w) || has(e.fields.notes, w) || has(e.fields.vendor, w)))
+    && (!f.min || total >= f.min)
+    && (!f.max || total <= f.max)
+    && (f.review === 'any' || (f.review === 'only') === needsAttention(e));
+}
+
 export function ExportView() {
   const s = settings();
   const el = h('div', { class: 'page' });
   const formats = allExportFormats();
   const state = {
-    range: 'this-month',
+    range: 'all', // with nothing described, everything goes in
     from: toISODate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)),
     to: toISODate(),
     business: 'all',
     onlyNew: false,
     format: formats.some((f) => f.id === s.exportFormat) ? s.exportFormat : 'csv',
     fileType: s.exportFileType || 'xlsx',
+    // What the user described, as a filter (see exportFilter in ai.js); empty lists mean "all".
+    filter: emptyFilter(),
   };
   let entries = [];
   const summary = h('div');
@@ -69,7 +90,7 @@ export function ExportView() {
   toInput.addEventListener('change', () => { state.to = toInput.value; renderSummary(); });
   customWrap.append(field('From', fromInput), field('To', toInput));
 
-  const rangeSelect = h('select', { class: 'select' }, ranges().map((r) => h('option', { value: r.id }, r.name)));
+  const rangeSelect = h('select', { class: 'select' }, ranges().map((r) => h('option', { value: r.id, selected: r.id === state.range }, r.name)));
   rangeSelect.addEventListener('change', () => {
     state.range = rangeSelect.value;
     customWrap.hidden = state.range !== 'custom';
@@ -91,7 +112,95 @@ export function ExportView() {
     return entries.filter((e) => (e.aiStatus === 'done' || e.aiStatus === 'skipped')
       && e.fields.date >= from && e.fields.date <= to
       && (state.business === 'all' || e.businessId === state.business)
-      && (!state.onlyNew || !e.exportedAt));
+      && (!state.onlyNew || !e.exportedAt)
+      && matchesFilter(e, state.filter));
+  }
+
+  // ----- "Describe what to include" -----
+  const describeInput = h('textarea', { class: 'textarea', rows: 2, autocapitalize: 'sentences',
+    placeholder: 'e.g. only Bank card 1 from Oct 1 to Oct 15, or fuel over $50 this year with just the date, store and amount' });
+  const chips = h('div', { class: 'chips' });
+  const applyButton = h('button', { class: 'btn small primary', onclick: () => describe() }, icon('sparkle'), 'Apply');
+  const onlyNewRow = toggleRow({ label: 'Only expenses not exported yet', hint: 'Avoids importing the same expense twice.', checked: false, onChange: (v) => { state.onlyNew = v; renderSummary(); } });
+
+  function setRange(id, from, to) {
+    state.range = id;
+    rangeSelect.value = id;
+    customWrap.hidden = id !== 'custom';
+    if (id === 'custom') {
+      state.from = from;
+      state.to = to;
+      fromInput.value = from;
+      toInput.value = to;
+    }
+  }
+
+  async function describe() {
+    const text = describeInput.value.trim();
+    if (!text) return clearDescription();
+    applyButton.disabled = true;
+    fill(applyButton, h('span', { class: 'spinner', style: { width: '16px', height: '16px', borderWidth: '2px' } }), 'Working…');
+    try {
+      const f = await exportFilter(text);
+      const valid = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : '');
+      const from = valid(f.date_from);
+      const to = valid(f.date_to);
+      if (from || to) setRange('custom', from || (entries.map((e) => e.fields.date).sort()[0] || toISODate()), to || toISODate());
+      else setRange('all');
+      // One book asked for: pick it in the Books list; several stay in the filter.
+      const bookIds = (f.books || []).map((name) => s.businesses.find((b) => businessName(b.id) === name)?.id).filter(Boolean);
+      state.business = businessSelect && bookIds.length === 1 ? bookIds[0] : 'all';
+      if (businessSelect) businessSelect.value = state.business;
+      state.onlyNew = Boolean(f.only_not_exported);
+      onlyNewRow.querySelector('input').checked = state.onlyNew;
+      state.filter = {
+        paymentMethods: f.payment_methods || [],
+        categories: f.categories || [],
+        books: bookIds.length > 1 ? bookIds : [],
+        vendors: f.vendors || [],
+        words: f.words || [],
+        min: Number(f.min_amount) || 0,
+        max: Number(f.max_amount) || 0,
+        review: f.review || 'any',
+        columns: f.columns || [],
+        notUnderstood: (f.not_understood || '').trim(),
+      };
+    } catch (err) {
+      toast(err.message, { error: true });
+    } finally {
+      applyButton.disabled = false;
+      fill(applyButton, icon('sparkle'), 'Apply');
+    }
+    renderChips();
+    renderSummary();
+  }
+
+  function clearDescription() {
+    describeInput.value = '';
+    state.filter = emptyFilter();
+    setRange('all');
+    renderChips();
+    renderSummary();
+  }
+
+  function renderChips() {
+    const f = state.filter;
+    const chip = (label, remove) => h('span', { class: 'chip filter-chip' }, label,
+      h('button', { class: 'chip-x', 'aria-label': `Remove ${label}`, onclick: () => { remove(); renderChips(); renderSummary(); } }, icon('x')));
+    const list = (xs) => xs.join(', ');
+    fill(chips,
+      f.paymentMethods.length ? chip(`Paid with: ${list(f.paymentMethods)}`, () => { f.paymentMethods = []; }) : null,
+      f.categories.length ? chip(`Category: ${list(f.categories)}`, () => { f.categories = []; }) : null,
+      f.books.length ? chip(`Books: ${list(f.books.map(businessName))}`, () => { f.books = []; }) : null,
+      f.vendors.length ? chip(`Store: ${list(f.vendors)}`, () => { f.vendors = []; }) : null,
+      f.words.length ? chip(`Mentions: ${list(f.words)}`, () => { f.words = []; }) : null,
+      f.min ? chip(`Over ${formatMoney(f.min, s.currency)}`, () => { f.min = 0; }) : null,
+      f.max ? chip(`Under ${formatMoney(f.max, s.currency)}`, () => { f.max = 0; }) : null,
+      f.review === 'only' ? chip('Only ones to review', () => { f.review = 'any'; }) : null,
+      f.review === 'exclude' ? chip('Skip ones to review', () => { f.review = 'any'; }) : null,
+      f.columns.length ? chip(`Columns: ${list(f.columns.map(exportHeader))}`, () => { f.columns = []; }) : null,
+      f.notUnderstood ? h('div', { class: 'tiny muted', style: { width: '100%' } }, `Couldn't use: ${f.notUnderstood}`) : null,
+    );
   }
 
   function rangeLabel() {
@@ -134,7 +243,7 @@ export function ExportView() {
       waiting ? h('div', { class: 'banner', style: { marginTop: '12px' } }, icon('clock'), h('div', { class: 'body' }, `${waiting} entr${waiting === 1 ? 'y is' : 'ies are'} still waiting to be read and won't be included yet.`)) : null,
       h('div', { class: 'stack', style: { marginTop: '16px' } },
         h('button', { class: 'btn primary', disabled: !list.length, onclick: async () => {
-          const file = exportFile(list, state.format, rangeLabel(), fileType);
+          const file = exportFile(list, state.format, rangeLabel(), fileType, { fields: state.filter.columns });
           const ok = await deliverFiles([file], file.name);
           if (ok) {
             await markExported(list.map((e) => e.id));
@@ -154,10 +263,14 @@ export function ExportView() {
     h('div', { class: 'stack' },
       ...destinations(),
       h('div', { class: 'section-title', style: { marginTop: '8px' } }, 'Export a file'),
+      field('Describe what to include (optional)', h('div', { class: 'stack', style: { gap: '8px' } },
+        describeInput,
+        h('div', { class: 'row', style: { gap: '8px' } }, applyButton, h('button', { class: 'btn small ghost', onclick: clearDescription }, 'Clear')),
+        chips), 'Leave it empty to export everything. You can use the keyboard mic to say it.'),
       field('Dates', rangeSelect),
       customWrap,
       businessSelect ? field('Books', businessSelect) : null,
-      h('div', { class: 'list' }, toggleRow({ label: 'Only expenses not exported yet', hint: 'Avoids importing the same expense twice.', checked: false, onChange: (v) => { state.onlyNew = v; renderSummary(); } })),
+      h('div', { class: 'list' }, onlyNewRow),
       h('div', { class: 'section-title', style: { marginTop: '8px' } }, 'Format'),
       choiceList({ options: formats, value: state.format, onChange: (id) => { state.format = id; renderFileType(); renderSummary(); } }),
       h('button', { class: 'btn ghost small', onclick: () => { location.hash = '#/settings/formats/new?from=export'; } }, icon('plus'), 'Use my own spreadsheet layout'),

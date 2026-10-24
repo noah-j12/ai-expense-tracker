@@ -229,6 +229,41 @@ export async function talkTurn(turns, createdAt) {
   return structuredCall({ system: buildSystemPrompt(s) + talkRules(), messages, schema });
 }
 
+// Turns a request like "only Bank card 1 between Oct 1 and Oct 15" into a filter. The app applies the filter
+// itself, so the AI never decides which expenses go in; empty means "everything".
+export async function exportFilter(description) {
+  const s = settings();
+  if (!s.ai.apiKey) throw new AIError('Add your AI key in Settings to describe an export.', 'auth');
+  const oneOf = (list) => ({ type: 'array', items: list.length ? { type: 'string', enum: list } : { type: 'string' } });
+  const books = s.businesses.map((b) => b.name || 'Main books');
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['date_from', 'date_to', 'payment_methods', 'categories', 'books', 'vendors', 'words', 'min_amount', 'max_amount', 'review', 'only_not_exported', 'columns', 'not_understood'],
+    properties: {
+      date_from: { type: 'string', description: 'YYYY-MM-DD, or "" for no start' },
+      date_to: { type: 'string', description: 'YYYY-MM-DD, or "" for no end' },
+      payment_methods: oneOf(s.paymentMethods),
+      categories: oneOf([...s.categories, UNCATEGORIZED]),
+      books: oneOf(books),
+      vendors: { type: 'array', items: { type: 'string' }, description: 'Store or vendor names asked for' },
+      words: { type: 'array', items: { type: 'string' }, description: 'Other words that must appear in what was bought or the notes' },
+      min_amount: { type: 'number', description: '0 for no minimum' },
+      max_amount: { type: 'number', description: '0 for no maximum' },
+      review: { type: 'string', enum: ['any', 'only', 'exclude'], description: 'Expenses still needing review' },
+      only_not_exported: { type: 'boolean' },
+      columns: { type: 'array', items: { type: 'string', enum: FIELDS.map((f) => f.key) }, description: 'Only if specific columns were asked for, in the order asked' },
+      not_understood: { type: 'string', description: 'Any part of the request that could not be turned into a filter, in a few words, or ""' },
+    },
+  };
+  const system = `You turn someone's request for an expense export into a filter. Today is ${toISODate()}.
+- Use only what they asked for. Leave everything else empty, which means "all".
+- Resolve relative dates ("last month", "Q3", "since June", "this year") to exact dates.
+- Their payment methods: ${s.paymentMethods.map((m) => describePaymentMethod(m, s)).join('; ') || 'none listed'}. Match names, nicknames and card endings to these.
+- Columns, only if they asked for specific ones: ${FIELDS.map((f) => `${f.key} (${f.label})`).join(', ')}.`;
+  return structuredCall({ system, content: description, schema });
+}
+
 async function structuredCall({ system, content, messages, schema }) {
   const s = settings();
   const params = {

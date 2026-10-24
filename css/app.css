@@ -274,6 +274,11 @@ button.list-item:active { background: var(--surface-2); }
 .chip.warn { background: var(--warn-soft); color: var(--warn); }
 .chip.danger { background: var(--danger-soft); color: var(--danger); }
 .chip svg { width: 13px; height: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips:empty { display: none; }
+.filter-chip { background: var(--accent-soft); color: var(--accent); font-size: 13px; padding: 4px 4px 4px 10px; white-space: normal; }
+.chip-x { border: 0; background: none; color: inherit; padding: 2px; display: inline-flex; border-radius: 999px; }
+.chip-x svg { width: 14px; height: 14px; }
 
 .empty { padding: 32px 16px; text-align: center; color: var(--muted); }
 .empty svg { width: 40px; height: 40px; color: var(--faint); margin-bottom: 8px; }

@@ -3,7 +3,7 @@
 
 import { getAllEntries, getFile, putEntry, putFile, clearEverything } from './db.js';
 import { hasReceipt } from './entries.js';
-import { ID_HEADER, fieldValue, formatExportDate } from './fields.js';
+import { ID_HEADER, fieldLabel, fieldValue, formatExportDate } from './fields.js';
 import { hasMultipleBusinesses, settings, replaceSettings } from './settings.js';
 import { base64ToBlob, blobToBase64, safeFileName } from './util.js';
 import { addSheet, buildWorkbook, openWorkbook, readSheetRows, findHeaderRow, saveWorkbook, upsertRows } from './xlsx.js';
@@ -15,7 +15,14 @@ const raw = (key) => (e) => fieldValue(e, key, { sheet: true });
 const labelWithCategory = (e) => `${raw('vendorDescription')(e) || 'Expense'} (${raw('category')(e)})`;
 
 // Each column: { header, type, get(entry) } with raw values (numbers, ISO dates).
-function columnsFor(formatId) {
+// Column headings for columns someone asked for, matching the standard export's.
+const HEADERS = { vendor: 'Vendor', total: 'Amount', totalNegative: 'Amount', paymentMethod: 'Payment Method', book: 'Books', receipt: 'Receipt Link',
+  vendorDescription: 'Vendor and Description', description: 'Description', status: 'Status', source: 'Source', loggedAt: 'Logged' };
+export const exportHeader = (key) => HEADERS[key] || fieldLabel(key);
+
+// fields: specific columns asked for (field keys, in order), used instead of the format's own.
+function columnsFor(formatId, fields = []) {
+  if (fields.length) return fields.map((key) => ({ header: exportHeader(key), type: typeOfField(key), get: raw(key) }));
   if (formatId?.startsWith('tpl:')) {
     const t = settings().exportTemplates.find((x) => `tpl:${x.id}` === formatId);
     if (t) return t.columns.map((c) => ({ header: c.header, type: typeOfField(c.field), get: c.field ? raw(c.field) : () => '' }));
@@ -59,8 +66,8 @@ function csvCell(value) {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-export function exportFile(entries, formatId, rangeLabel, fileType = 'csv') {
-  const columns = columnsFor(formatId);
+export function exportFile(entries, formatId, rangeLabel, fileType = 'csv', { fields = [] } = {}) {
+  const columns = columnsFor(formatId, fields);
   const sorted = [...entries].sort((a, b) => a.fields.date.localeCompare(b.fields.date) || a.createdAt - b.createdAt);
   const values = sorted.map((e) => columns.map((c) => c.get(e)));
   const df = settings().dateFormat;
