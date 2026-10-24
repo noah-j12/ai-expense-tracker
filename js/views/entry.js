@@ -5,6 +5,7 @@ import { deliverFiles, receiptFiles } from '../exporter.js';
 import { kick, queueState } from '../queue.js';
 import { CURRENCIES, businessName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
 import { sheetsConnected } from '../sheets.js';
+import { getLoan } from '../loans.js';
 import { choiceSheet, confirmSheet, field, imageViewer, promptSheet, toast, topbar } from '../ui.js';
 import { debounce, formatDateTime, formatMoney, fill, h, icon, navBack, on, round2 } from '../util.js';
 
@@ -148,7 +149,8 @@ export function EntryView({ params, query }) {
     return null;
   }
 
-  function form() {
+  // loan: the loan this is a payment on, if it is one. Then the amount is the interest part.
+  function form(loan) {
     const s = settings();
     const f = entry.fields;
     const vendor = textInput('vendor', { placeholder: 'Who you paid', autocapitalize: 'words' });
@@ -198,8 +200,27 @@ export function EntryView({ params, query }) {
     const amount = moneyInput('total', { big: true });
     if (isNew) setTimeout(() => amount.focus(), 50);
 
+    let loanCard = null;
+    if (loan) {
+      const paid = h('input', { class: 'input', inputmode: 'decimal', value: Number(entry.loanPayment.amount || 0).toFixed(2) });
+      const note = h('div', { class: 'tiny muted' });
+      const num = (v) => round2(parseFloat(String(v).replace(/[^0-9.]/g, '')) || 0);
+      const showNote = () => fill(note, `${formatMoney(round2(num(paid.value) - num(amount.value)), f.currency)} of it comes off the loan balance. The interest below is the expense.`);
+      paid.addEventListener('input', showNote);
+      amount.addEventListener('input', showNote);
+      paid.addEventListener('change', async () => {
+        edited = true;
+        await updateEntry(id, (x) => { x.loanPayment = { ...x.loanPayment, amount: num(paid.value) }; });
+      });
+      showNote();
+      loanCard = h('div', { class: 'card pad stack' },
+        h('div', { class: 'row' }, icon('building'), h('b', { class: 'grow' }, `Payment on ${loan.name}`), h('a', { class: 'btn small ghost', href: `#/loans/${loan.id}` }, 'View loan')),
+        field('Total paid', paid), note);
+    }
+
     return h('div', { class: 'stack' },
-      field('Amount', amount, f.total < 0 ? 'Negative means a refund.' : null),
+      loanCard,
+      field(loan ? 'Interest' : 'Amount', amount, f.total < 0 ? 'Negative means a refund.' : null),
       field('Vendor', vendor),
       h('div', { class: 'grid-2' }, field('Date', date), field('Category', category)),
       field('What was it for?', textInput('description', { placeholder: 'e.g. Lumber for deck job', autocapitalize: 'sentences' })),
@@ -220,7 +241,7 @@ export function EntryView({ params, query }) {
     const model = MODELS.find((m) => m.id === e.aiModel || e.aiModel?.startsWith(m.id));
     const parts = [
       `Logged ${formatDateTime(e.createdAt)}`,
-      { photo: 'Photo', upload: 'Upload', voice: 'Voice/typed', manual: 'Entered by hand', sheet: 'Added in the sheet' }[e.source],
+      { photo: 'Photo', upload: 'Upload', voice: 'Voice/typed', manual: 'Entered by hand', sheet: 'Added in the sheet', loan: 'Loan payment' }[e.source],
       e.aiModel ? `Read by ${model ? model.detail.split(' · ')[0] : e.aiModel}` : null,
       sheetsConnected() ? (e.sheet?.syncedAt && !e.sheet.dirty ? 'Saved to Google Sheets' : 'Not yet in Google Sheets') : null,
       e.exportedAt ? `Exported ${formatDateTime(e.exportedAt)}` : null,
@@ -237,7 +258,7 @@ export function EntryView({ params, query }) {
       h('div', { class: 'stack' },
         await preview(),
         statusBlock(),
-        ready ? form() : null,
+        ready ? form(e.loanPayment ? await getLoan(e.loanPayment.loanId) : null) : null,
         ready ? h('button', { class: 'btn primary block', onclick: done }, icon('check'), 'Done') : null,
         meta(),
       ),

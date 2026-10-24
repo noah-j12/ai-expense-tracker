@@ -7,6 +7,7 @@ import { EntryView } from './views/entry.js';
 import { ExportView } from './views/export.js';
 import { SettingsView } from './views/settings.js';
 import { SetupView } from './views/setup.js';
+import { LoansView } from './views/loans.js';
 
 const ROUTES = [
   [/^\/$/, HomeView],
@@ -14,6 +15,7 @@ const ROUTES = [
   [/^\/export$/, ExportView],
   [/^\/settings(?:\/(\w+)(?:\/([\w-]+))?)?$/, SettingsView],
   [/^\/setup$/, SetupView],
+  [/^\/loans(?:\/([\w-]+)(?:\/(edit))?)?$/, LoansView],
 ];
 
 const appEl = document.getElementById('app');

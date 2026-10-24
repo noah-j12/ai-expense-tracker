@@ -8,7 +8,8 @@ import { ID_HEADER, SHEET_EDITABLE, fieldValue, normalizeField } from './fields.
 import { hasMultipleBusinesses, settings } from './settings.js';
 import { createEntry, getEntry, hasReceipt, isDeleted, listEntries, removeEntry, restoreEntry } from './entries.js';
 import { blobToBase64, emit, safeFileName } from './util.js';
-import { googleDelete, googleRows, googleUpsert, prepareGoogleTab, spreadsheetInfo, uploadReceipt } from './google.js';
+import { googleDelete, googleRows, googleUpsert, prepareGoogleTab, spreadsheetInfo, uploadReceipt, writeTab } from './google.js';
+import { FREQUENCIES, SPLIT_LABELS, listLoans, loanReport, loanStatus, loansOn } from './loans.js';
 
 export const SCRIPT_VERSION = 2;
 export const sheetsState = { error: '', lastSync: null };
@@ -198,6 +199,38 @@ async function addFromSheet(id, cells, { where, mapped }) {
   return e;
 }
 
+// ---------- Loans tabs ----------
+// With loan tracking on, the sheet also gets a "Loans" tab (each loan's balance and interest) and a
+// "Loan payments" tab (every payment split into principal and interest). The app keeps these up to date
+// itself, rewriting them only when something changed. The interest of each payment is also an expense
+// row in the main tab, so it's counted once with the other expenses.
+
+const LOANS_TAB = 'Loans';
+const PAYMENTS_TAB = 'Loan payments';
+
+async function syncLoanTabs(spreadsheetId, expensesTab) {
+  if (!loansOn() || [LOANS_TAB, PAYMENTS_TAB].includes(expensesTab)) return;
+  const loans = await listLoans();
+  if (!loans.length) return;
+  const entries = await listEntries();
+  const year = new Date().getFullYear();
+  const loanRows = [['Loan', 'Lender', 'Amount borrowed', 'Interest rate', 'How often', 'Balance', 'Principal paid', `Interest paid ${year}`, 'Interest paid in all', 'Next payment due', 'Next payment']];
+  for (const l of loans) {
+    const st = loanStatus(l, entries, year);
+    loanRows.push([l.name, l.lender || '', l.amount, l.rate ? `${l.rate}%` : '', FREQUENCIES.find((f) => f.id === l.frequency)?.name || '',
+      st.balance, st.principalPaid, st.interestThisYear, st.interestPaid, st.next?.date || '', st.next?.payment ?? '']);
+  }
+  const paymentRows = [['Date', 'Loan', 'Payment', 'Principal', 'Interest', 'Balance after', 'Split', 'Paid with']];
+  for (const p of loanReport(loans, entries).payments) {
+    paymentRows.push([p.e.fields.date, p.loan.name, p.parts.amount, p.parts.principal, p.parts.interest, p.balanceAfter, SPLIT_LABELS[p.e.loanPayment.source] || '', p.e.fields.paymentMethod || '']);
+  }
+  const signature = JSON.stringify([spreadsheetId, loanRows, paymentRows]);
+  if ((await kvGet('loanTabsSig')) === signature) return;
+  await writeTab({ spreadsheetId, tab: LOANS_TAB, rows: loanRows });
+  await writeTab({ spreadsheetId, tab: PAYMENTS_TAB, rows: paymentRows });
+  await kvSet('loanTabsSig', signature);
+}
+
 let inFlight = null;
 
 // One sync at a time; asking while one is running waits for that one.
@@ -271,6 +304,7 @@ async function runSync() {
         await googleUpsert({ spreadsheetId, tab, items, receiptHeader, idHeader: ID_HEADER });
         for (let j = 0; j < chunk.length; j++) await markSynced(chunk[j], items[j].receiptUrl);
       }
+      await syncLoanTabs(spreadsheetId, tab);
     } else {
       for (const e of dirty) {
         const item = itemFor(e);

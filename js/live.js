@@ -6,6 +6,8 @@
 import { AIError, extractExpenses } from './ai.js';
 import { applyAIResult, createEntry, getEntry, updateEntry } from './entries.js';
 import { kick } from './queue.js';
+import { getAllEntries } from './db.js';
+import { buildSchedule, listLoans, loansOn, loansSummary, saveLoan } from './loans.js';
 import { settings } from './settings.js';
 import { MicError, askingRules, audioContext, errorDetail, prepareAudio, releaseAudio, setAudioSession, SPEECH_SPEED, voiceId } from './speech.js';
 import { toast } from './ui.js';
@@ -21,7 +23,19 @@ const MAX_SESSION_MS = 4 * 60_000;
 
 const allowInterrupt = () => settings().voice?.allowInterrupt === true;
 
-function instructions() {
+// With loan tracking on: the user's loans (to log payments and answer questions about them) and how to add one.
+async function loanInstructions() {
+  if (!loansOn()) return '';
+  const loans = await listLoans();
+  return `
+- They might instead make a payment on one of their loans, or ask about their loans. Their loans:
+${loans.length ? loansSummary(loans, await getAllEntries()) : '(none yet)'}
+- A loan payment only needs which loan and how much (and how they paid, if asked for above); then call log_expense, e.g. "Paid $850 on the Tractor loan".
+- Answer questions about their loans from the list above, in one short sentence.
+- If they describe taking out a new loan, ask for anything missing of: a short name for it, the amount, the interest rate, how often payments are due, how many payments there are (or the payment amount), and when the first payment is due. Then call add_loan.`;
+}
+
+function instructions(loanPart = '') {
   return `You are the voice of an expense-tracking app. The user is telling you about something they bought so it can be logged for their bookkeeping.
 - Be brief: as few words as possible, never more than one short sentence. No filler, no small talk, and don't repeat back what they said.
 - Talk at a quick, brisk pace.
@@ -29,8 +43,28 @@ ${askingRules()}
 - Once you have everything above (or they've said they don't know the rest), call log_expense. Call it once per separate purchase.
 - When log_expense returns, say its "say" text and stop. Don't ask if there's anything else.
 - If they say to cancel or that it was a mistake, say "Okay, nothing saved." and don't call log_expense.
-- Speak the user's language.`;
+- Speak the user's language.${loanPart}`;
 }
+
+const ADD_LOAN = {
+  type: 'function',
+  name: 'add_loan',
+  description: 'Add a new loan the user has taken out, so its payments can be tracked.',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'A short name, like "Tractor loan"' },
+      lender: { type: 'string' },
+      amount: { type: 'number' },
+      rate: { type: 'number', description: 'Yearly interest rate in percent' },
+      frequency: { type: 'string', enum: ['monthly', 'quarterly', 'semiannual', 'annual', 'irregular'] },
+      payment_count: { type: 'number' },
+      payment_amount: { type: 'number' },
+      first_payment_date: { type: 'string', description: 'YYYY-MM-DD' },
+    },
+    required: ['name', 'amount'],
+  },
+};
 
 const TOOL = {
   type: 'function',
@@ -61,7 +95,7 @@ async function mintSecret(withTranscription) {
   const session = {
     type: 'realtime',
     model: LIVE_MODEL,
-    instructions: instructions(),
+    instructions: instructions(await loanInstructions()),
     audio: {
       input: {
         // Without interrupting, the model's speech is never cut off by what the mic hears (it can hear
@@ -72,7 +106,7 @@ async function mintSecret(withTranscription) {
       },
       output: { voice: voiceId(), speed: SPEECH_SPEED },
     },
-    tools: [TOOL],
+    tools: loansOn() ? [TOOL, ADD_LOAN] : [TOOL],
     tool_choice: 'auto',
   };
   let res;
@@ -327,7 +361,7 @@ export function startLive({ onUseKeyboard }) {
   }
 
   async function handleResponse(response) {
-    const calls = (response?.output || []).filter((o) => o.type === 'function_call' && o.name === 'log_expense');
+    const calls = (response?.output || []).filter((o) => o.type === 'function_call' && (o.name === 'log_expense' || o.name === 'add_loan'));
     if (!calls.length) {
       // The model said "Okay, nothing saved" (or similar) after a cancel.
       const said = (response?.output || []).flatMap((o) => o.content || []).map((c) => c.transcript || '').join(' ');
@@ -341,13 +375,26 @@ export function startLive({ onUseKeyboard }) {
     for (const call of calls) {
       let args = {};
       try { args = JSON.parse(call.arguments || '{}'); } catch { /* use empty */ }
-      const out = await saveExpense(String(args.description || '').trim());
+      const out = call.name === 'add_loan' ? await addLoan(args) : await saveExpense(String(args.description || '').trim());
       send({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: call.call_id, output: JSON.stringify(out) } });
     }
     awaitingLastReply = true;
     send({ type: 'response.create' });
     // If the confirmation never plays (no audio events), close anyway.
     finishSoon(12_000);
+  }
+
+  // A new loan described in the conversation. Its schedule is worked out when there's enough to go on;
+  // the lender's own schedule can be added on the Loans page.
+  async function addLoan(a) {
+    const loan = { name: String(a.name || 'Loan').trim(), lender: a.lender || '', aliases: [], amount: Number(a.amount) || 0, rate: Number(a.rate) || 0, rateType: 'fixed',
+      frequency: a.frequency || 'monthly', firstDate: a.first_payment_date || '', count: Number(a.payment_count) || 0, payment: Number(a.payment_amount) || 0 };
+    loan.schedule = loan.frequency === 'irregular' ? [] : buildSchedule(loan);
+    loan.scheduleSource = loan.schedule.length ? 'calculated' : '';
+    await saveLoan(loan);
+    savedCount++;
+    const first = loan.schedule[0];
+    return { saved: true, say: `Added: ${loan.name}${first ? `, ${formatMoney(first.payment, settings().currency)} a payment` : ''}.` };
   }
 
   // Claude reads the description like any typed entry, using the user's categories and rules.
@@ -360,6 +407,7 @@ export function startLive({ onUseKeyboard }) {
       await applyAIResult(entry.id, result);
       const x = result.expenses?.[0];
       if (!result.is_expense || !x) return { saved: true, say: 'Saved. Check it in the app.' };
+      if (x.loan) return { saved: true, say: `Saved: ${formatMoney(x.total, x.currency)} payment on ${x.loan}.` };
       return { saved: true, say: `Saved: ${[x.description, x.vendor, formatMoney(x.total, x.currency)].filter(Boolean).join(', ')}.` };
     } catch (err) {
       // Keep it: the queue finishes it when the AI is reachable again.

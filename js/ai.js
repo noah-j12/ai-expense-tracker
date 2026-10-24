@@ -5,6 +5,7 @@ import Anthropic from '../vendor/anthropic-sdk.mjs';
 import { FIELDS } from './fields.js';
 import { describePaymentMethod, settings } from './settings.js';
 import { askingRules } from './speech.js';
+import { describeLoan, listLoans, loansOn } from './loans.js';
 import { blobToBase64, toISODate } from './util.js';
 
 export const MODELS = [
@@ -40,11 +41,12 @@ export async function testApiKey(apiKey, model) {
   }
 }
 
-function buildSchema(categories) {
+// loans: the user's loans when loan tracking is on (adds which loan a payment is for, and new loans).
+function buildSchema(categories, loans = null) {
   const categoryField = categories.length
     ? { type: 'string', enum: [...categories, UNCATEGORIZED] }
     : { type: 'string' };
-  return {
+  const schema = {
     type: 'object',
     additionalProperties: false,
     required: ['is_expense', 'not_expense_reason', 'expenses'],
@@ -80,6 +82,42 @@ function buildSchema(categories) {
       },
     },
   };
+  if (loans) {
+    const item = schema.properties.expenses.items;
+    item.required.push('loan', 'statement_interest', 'statement_principal');
+    Object.assign(item.properties, {
+      loan: loans.length ? { type: 'string', enum: [...loans.map((l) => l.name), ''] } : { type: 'string' },
+      statement_interest: { type: 'number', description: '-1 when not shown' },
+      statement_principal: { type: 'number', description: '-1 when not shown' },
+    });
+    schema.required.push('new_loan');
+    schema.properties.new_loan = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['mentioned', 'name', 'lender', 'amount', 'rate', 'first_payment_date', 'frequency', 'payment_count', 'payment_amount'],
+      properties: {
+        mentioned: { type: 'boolean' },
+        name: { type: 'string', description: 'A short name, like "Tractor loan"' },
+        lender: { type: 'string' },
+        amount: { type: 'number' },
+        rate: { type: 'number', description: 'Yearly interest rate in percent' },
+        first_payment_date: { type: 'string', description: 'YYYY-MM-DD or ""' },
+        frequency: { type: 'string', enum: ['monthly', 'quarterly', 'semiannual', 'annual', 'irregular', ''] },
+        payment_count: { type: 'number' },
+        payment_amount: { type: 'number' },
+      },
+    };
+  }
+  return schema;
+}
+
+function loanRules(loans) {
+  if (!loans) return '';
+  return `
+
+Loans. The user's loans: ${loans.map(describeLoan).join('; ') || 'none yet'}.
+- loan: if a record is a payment on one of these loans, its exact name; otherwise "". For a loan payment, total is the whole amount paid, vendor is the lender, category is "${UNCATEGORIZED}", and statement_interest and statement_principal are the interest and principal shown on a statement or receipt, or -1 when not shown. Don't work them out yourself.
+- new_loan: if the user describes taking out a new loan (not a payment on one), set mentioned to true and fill in what they said, with 0 or "" for anything they didn't say; then set is_expense to false and return no records. Otherwise mentioned is false and the rest is 0 or "".`;
 }
 
 function buildSystemPrompt(s) {
@@ -144,11 +182,65 @@ async function buildContent(entry, file) {
 export async function extractExpenses(entry, file) {
   const s = settings();
   if (!s.ai.apiKey) throw new AIError('Add your AI key in Settings to read this entry.', 'auth');
+  const loans = loansOn() ? await listLoans() : null;
   return structuredCall({
-    system: buildSystemPrompt(s),
+    system: buildSystemPrompt(s) + loanRules(loans),
     content: await buildContent(entry, file),
-    schema: buildSchema(s.categories),
+    schema: buildSchema(s.categories, loans),
   });
+}
+
+// Reads a lender's loan paperwork (an amortization schedule, a statement or the loan agreement; one or more
+// photos or PDFs). Returns { details, schedule: [{ n, date, payment, interest, principal, balance }] }.
+export async function readLoanPaperwork(files) {
+  const s = settings();
+  if (!s.ai.apiKey) throw new AIError('Add your AI key in Settings to read loan paperwork.', 'auth');
+  const content = [];
+  for (const file of files) {
+    const data = await blobToBase64(file);
+    content.push(file.type === 'application/pdf'
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
+      : { type: 'image', source: { type: 'base64', media_type: file.type || 'image/jpeg', data } });
+  }
+  content.push({ type: 'text', text: 'Read this loan paperwork.' });
+  const money = { type: 'number' };
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['is_loan_paperwork', 'details', 'schedule'],
+    properties: {
+      is_loan_paperwork: { type: 'boolean' },
+      details: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['lender', 'amount', 'rate', 'rate_type', 'frequency', 'first_payment_date', 'payment_count', 'payment_amount'],
+        properties: {
+          lender: { type: 'string' },
+          amount: { ...money, description: 'Amount borrowed (the starting balance of the schedule); 0 if not shown' },
+          rate: { type: 'number', description: 'Yearly interest rate in percent; 0 if not shown' },
+          rate_type: { type: 'string', enum: ['fixed', 'variable', ''] },
+          frequency: { type: 'string', enum: ['monthly', 'quarterly', 'semiannual', 'annual', 'irregular', ''] },
+          first_payment_date: { type: 'string', description: 'YYYY-MM-DD or ""' },
+          payment_count: { type: 'number' },
+          payment_amount: money,
+        },
+      },
+      schedule: {
+        type: 'array',
+        description: 'Every row of the payment schedule shown, in order; empty if there is none',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['n', 'date', 'payment', 'interest', 'principal', 'balance'],
+          properties: { n: { type: 'number' }, date: { type: 'string', description: 'YYYY-MM-DD' }, payment: money, interest: money, principal: money, balance: { ...money, description: 'Balance after this payment' } },
+        },
+      },
+    },
+  };
+  const system = `You read loan paperwork (amortization schedules, statements, loan agreements) and copy out the loan's details and its payment schedule exactly as shown. Never calculate rows that aren't shown. Today is ${toISODate()}.`;
+  const out = await structuredCall({ system, content, schema });
+  if (!out.is_loan_paperwork) throw new AIError("That doesn't look like loan paperwork. Try a photo of the payment schedule or a statement.", 'fatal');
+  return out;
 }
 
 // Suggests which expense detail belongs in each of someone's spreadsheet columns.
@@ -197,7 +289,10 @@ export async function suggestColumnMapping(headers, samples = []) {
   }
 }
 
-function talkRules() {
+function talkRules(loans = null) {
+  const loanLine = loans ? `
+- A payment on one of their loans only needs which loan and how much (and how they paid, if asked for above); don't ask for a store.
+- A new loan needs a short name for it, the amount, the interest rate, how often payments are due, how many payments there are (or the payment amount), and when the first payment is due. Ask for what's missing before setting done.` : '';
   return `
 
 You are also talking with the user out loud, by voice, to log what they bought. What to find out:
@@ -208,7 +303,7 @@ After each thing they say:
 - Once you have it all, set done to true and put a short spoken confirmation in "say" (under 8 words, e.g. "Saved: two shovels, Home Depot, $22.49."). Always mention the amount.
 - If they say to cancel or that it was a mistake, set done to true, is_expense to false, and say "Okay, nothing saved."
 - "say" is read aloud: plain conversational words, no lists or symbols other than $ amounts.
-- Always fill in the expense records from everything said so far.`;
+- Always fill in the expense records from everything said so far.${loanLine}`;
 }
 
 // One turn of a spoken conversation. turns: [{ role: 'user'|'assistant', text }], starting with the user.
@@ -216,7 +311,8 @@ After each thing they say:
 export async function talkTurn(turns, createdAt) {
   const s = settings();
   if (!s.ai.apiKey) throw new AIError('Add your AI key in Settings to log expenses.', 'auth');
-  const base = buildSchema(s.categories);
+  const loans = loansOn() ? await listLoans() : null;
+  const base = buildSchema(s.categories, loans);
   const schema = {
     ...base,
     required: ['done', 'say', ...base.required],
@@ -226,7 +322,7 @@ export async function talkTurn(turns, createdAt) {
     role: t.role,
     content: i === 0 ? `${recordedLine(createdAt)}\nThe user said: "${t.text}"` : t.role === 'user' ? `The user said: "${t.text}"` : t.text,
   }));
-  return structuredCall({ system: buildSystemPrompt(s) + talkRules(), messages, schema });
+  return structuredCall({ system: buildSystemPrompt(s) + loanRules(loans) + talkRules(loans), messages, schema });
 }
 
 // Turns a request like "only Bank card 1 between Oct 1 and Oct 15" into a filter. The app applies the filter

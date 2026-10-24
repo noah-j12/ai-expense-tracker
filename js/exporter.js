@@ -206,7 +206,9 @@ export async function backupData({ includeKey = false, photos = true } = {}) {
     entries = entries.map(slim);
     trash.forEach((t) => { t.entry = slim(t.entry); });
   }
-  return { app: 'ai-expense-tracker', version: 2, createdAt: new Date().toISOString(), settings: s, entries, trash, files };
+  const loans = (await kvGet('loans')) || [];
+  const loanDrafts = (await kvGet('loanDrafts')) || [];
+  return { app: 'ai-expense-tracker', version: 2, createdAt: new Date().toISOString(), settings: s, entries, trash, loans, loanDrafts, files };
 }
 
 export async function backupFile({ includeKey = false } = {}) {
@@ -237,6 +239,8 @@ export async function restoreData(data, { photos = new Map() } = {}) {
   const trash = data.trash || [];
   for (const t of trash) await withThumb(t.entry);
   await kvSet('trash', trash);
+  await kvSet('loans', data.loans || []);
+  await kvSet('loanDrafts', data.loanDrafts || []);
   const next = data.settings;
   if (!next.ai.apiKey) next.ai.apiKey = keep.apiKey;
   if (next.voice && !next.voice.openaiKey) next.voice.openaiKey = keep.openaiKey || '';

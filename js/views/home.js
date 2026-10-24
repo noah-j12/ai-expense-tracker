@@ -1,8 +1,9 @@
 import { addManually, openSpeakSheet, startScan, startUpload } from '../capture.js';
-import { kvGet, kvSet } from '../db.js';
+import { getAllEntries, kvGet, kvSet } from '../db.js';
 import { displayTitle, entryState, listEntries, needsAttention } from '../entries.js';
 import { backupMode, backupState, googleSignedIn, reminderDue } from '../backup.js';
 import { queueState } from '../queue.js';
+import { listLoanDrafts, listLoans, loanStatus, loansOn } from '../loans.js';
 import { saveByHand } from './backup-setup.js';
 import { businessName, hasMultipleBusinesses, settings, updateSettings } from '../settings.js';
 import { sheetsConnected, sheetsLinked, sheetsState, syncSheets } from '../sheets.js';
@@ -49,6 +50,20 @@ export function HomeView() {
   const el = h('div', { class: 'page' });
   const dynamic = h('div');
   const listWrap = h('div');
+  // With loan tracking on: a quick look at the loans, and any new loan waiting to be finished.
+  const loansCard = h('div');
+  async function renderLoansCard() {
+    if (!loansOn()) return fill(loansCard);
+    const [loans, drafts, all] = await Promise.all([listLoans(), listLoanDrafts(), getAllEntries()]);
+    const owed = loans.reduce((sum, l) => sum + loanStatus(l, all).balance, 0);
+    const sub = [loans.length ? `${loans.length} loan${loans.length === 1 ? '' : 's'} · ${formatMoney(owed, settings().currency)} owed` : 'Add your first loan',
+      drafts.length ? `${drafts.length} to finish adding` : ''].filter(Boolean).join(' · ');
+    fill(loansCard, h('div', { class: 'list', style: { marginTop: '16px' } },
+      h('button', { class: 'list-item', onclick: () => { location.hash = '#/loans'; } }, icon('building'),
+        h('div', { class: 'grow' }, h('div', null, 'Loans'), h('div', { class: 'tiny muted' }, sub)),
+        drafts.length ? h('span', { class: 'chip warn' }, String(drafts.length)) : null,
+        h('span', { class: 'chev' }, icon('chevron')))));
+  }
   // Checks the sheet for changes now instead of waiting for the next automatic check. Made once, so it keeps
   // spinning while the list redraws.
   const refreshButton = h('button', { class: 'icon-btn refresh-btn', 'aria-label': 'Check your sheet for changes', onclick: async () => {
@@ -87,6 +102,7 @@ export function HomeView() {
       h('button', { class: 'btn ghost small', onclick: startUpload }, icon('upload'), 'Upload photo or PDF'),
       h('button', { class: 'btn ghost small', onclick: addManually }, icon('pen'), 'Add by hand'),
     ),
+    loansCard,
     listWrap,
   );
 
@@ -205,10 +221,14 @@ export function HomeView() {
 
   kvGet('installDismissed').then((v) => { installDismissed = Boolean(v); render(); });
   load();
+  renderLoansCard();
   const offs = [
     on('entries-changed', load),
     on('queue-changed', render),
     on('backup-changed', render),
+    on('loans-changed', renderLoansCard),
+    on('entries-changed', renderLoansCard),
+    on('settings-changed', renderLoansCard),
     on('settings-changed', render),
     on('sheets-changed', render),
   ];

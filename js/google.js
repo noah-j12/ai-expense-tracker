@@ -373,6 +373,14 @@ export async function uploadReceipt(blob, name) {
   }
 }
 
+// Replaces everything in a tab the app keeps up to date itself (like "Loans"), creating it if needed.
+// rows: arrays of values, the first one being the headings.
+export async function writeTab({ spreadsheetId, tab, rows }) {
+  await prepareGoogleTab({ spreadsheetId, tab, headers: rows[0] });
+  await api(`${SHEETS}/${spreadsheetId}/values/${encodeURIComponent(q(tab))}:clear`, { method: 'POST', json: {} });
+  await api(`${SHEETS}/${spreadsheetId}/values/${encodeURIComponent(`${q(tab)}!A1`)}?valueInputOption=USER_ENTERED`, { method: 'PUT', json: { values: rows.map((r) => r.map(cellValue)) } });
+}
+
 // ---------- Backup in Drive ----------
 // A folder holding backup.json (expenses and settings) and each receipt photo as its own file, so a backup
 // only uploads photos it hasn't sent before. The app can only see files it made itself (drive.file).

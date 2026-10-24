@@ -40,7 +40,7 @@ export function formatExportDate(iso, format) {
   return `${mm}/${dd}/${yyyy}`;
 }
 
-const SOURCE_LABELS = { photo: 'Photo', upload: 'Upload', voice: 'Voice', manual: 'Manual', sheet: 'Sheet' };
+const SOURCE_LABELS = { photo: 'Photo', upload: 'Upload', voice: 'Voice', manual: 'Manual', sheet: 'Sheet', loan: 'Loan payment' };
 
 // Fields that a change typed into the sheet can update in the app.
 export const SHEET_EDITABLE = new Set(['date', 'vendor', 'description', 'category', 'total', 'totalNegative', 'subtotal', 'tax', 'tip', 'currency', 'paymentMethod', 'notes']);

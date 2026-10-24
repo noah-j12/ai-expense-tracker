@@ -126,6 +126,8 @@ function defaults() {
     // Automatic backup: 'drive' (Google Drive, automatic), 'remind' (a reminder to save one to iCloud Drive
     // or Files), or 'off'.
     backup: { mode: 'off' },
+    // Loan tracking (see loans.js): off unless the user has loans.
+    loans: { enabled: false },
   };
 }
 

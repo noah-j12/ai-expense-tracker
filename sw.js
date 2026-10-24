@@ -1,7 +1,7 @@
 // Service worker: keeps a copy of the app on the phone so it opens with no signal.
 // When you publish changes, bump VERSION so phones pick up the new files.
 
-const VERSION = '1.14.0';
+const VERSION = '1.15.0';
 const CACHE = `ai-expense-tracker-${VERSION}`;
 
 const ASSETS = [
@@ -21,6 +21,7 @@ const ASSETS = [
   'js/google-config.js',
   'js/image.js',
   'js/live.js',
+  'js/loans.js',
   'js/mapper.js',
   'js/queue.js',
   'js/settings.js',
@@ -39,6 +40,7 @@ const ASSETS = [
   'js/views/formats.js',
   'js/views/home.js',
   'js/views/install.js',
+  'js/views/loans.js',
   'js/views/settings.js',
   'js/views/setup.js',
   'js/views/sheets-setup.js',

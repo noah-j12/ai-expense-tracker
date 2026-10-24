@@ -332,6 +332,14 @@ button.list-item:active { background: var(--surface-2); }
 .input-group { display: flex; gap: 8px; }
 .input-group .input { flex: 1; min-width: 0; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.meter { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.schedule { font-size: 13px; }
+.schedule-row { display: grid; grid-template-columns: 28px 1fr 1fr 1fr 1fr; gap: 6px; padding: 6px 2px; border-bottom: 1px solid var(--border); align-items: center; }
+.schedule-row.head { font-weight: 600; color: var(--muted); }
+.schedule-row.paid { color: var(--muted); }
+.schedule-row svg { width: 14px; height: 14px; color: var(--accent); }
+.schedule-row span:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .hint { font-size: 13px; color: var(--muted); padding-left: 2px; }
 
 .toggle-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }

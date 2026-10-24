@@ -2,7 +2,8 @@
 
 import { deleteEntryRecord, deleteFile, getAllEntries, getEntry, kvGet, kvSet, putEntry, putFile } from './db.js';
 import { methodForCard, settings, updateSettings } from './settings.js';
-import { emit, parseISODate, round2, toISODate, uid } from './util.js';
+import { emit, formatMoney, parseISODate, round2, toISODate, uid } from './util.js';
+import { addLoanDraft, interestCategory, listLoans, paymentFields, splitPayment } from './loans.js';
 
 export function blankFields(createdAt = Date.now()) {
   return {
@@ -194,6 +195,7 @@ function cleanDate(value, fallbackMs) {
 
 function applyFields(entry, x, model) {
   const s = settings();
+  delete entry.loanPayment; // set again below if the AI says it's a loan payment
   const category = s.categories.includes(x.category) ? x.category : (s.categories.length ? '' : (x.category || ''));
   const currency = /^[A-Z]{3}$/.test((x.currency || '').toUpperCase()) ? x.currency.toUpperCase() : s.currency;
   entry.fields = {
@@ -226,6 +228,39 @@ function applyFields(entry, x, model) {
   entry.sheet = { ...entry.sheet, dirty: true };
 }
 
+// ---------- Loan payments ----------
+
+const statementNumber = (v) => (typeof v === 'number' && v >= 0 ? v : -1);
+
+async function ensureInterestCategory() {
+  if (!interestCategory()) await updateSettings((d) => { d.categories.push('Interest'); });
+}
+
+// Turns an expense the AI read into a payment on a loan: the expense becomes the interest part.
+async function applyLoanPayment(e, loan, x) {
+  const amount = round2(x.total);
+  const others = (await getAllEntries()).filter((o) => o.id !== e.id);
+  const split = splitPayment(loan, { amount, date: e.fields.date, statementInterest: statementNumber(x.statement_interest), statementPrincipal: statementNumber(x.statement_principal) }, others);
+  await ensureInterestCategory();
+  e.fields = { ...e.fields, ...paymentFields(loan, split.interest) };
+  e.loanPayment = { loanId: loan.id, amount, scheduleN: split.scheduleN, source: split.source };
+  e.reviewReasons = (e.reviewReasons || []).filter((r) => !/categor/i.test(r));
+  if (split.source === 'unknown') e.reviewReasons.push(unknownInterestReason(amount));
+}
+
+const unknownInterestReason = (amount) => `How much of this ${formatMoney(amount, settings().currency)} payment was interest? Enter it under Amount; the rest counts toward the loan.`;
+
+// A payment recorded by hand on the Loans page. interest/principal: from a statement, or -1.
+export async function recordLoanPayment(loan, { date, amount, interest = -1, principal = -1, paymentMethod = '' }) {
+  const split = splitPayment(loan, { amount, date, statementInterest: interest, statementPrincipal: principal }, await getAllEntries());
+  await ensureInterestCategory();
+  const e = await createEntry({ source: 'loan', fields: { date, paymentMethod, ...paymentFields(loan, split.interest) } });
+  return updateEntry(e.id, (x) => {
+    x.loanPayment = { loanId: loan.id, amount: round2(amount), scheduleN: split.scheduleN, source: interest >= 0 || principal >= 0 ? 'manual' : split.source };
+    if (split.source === 'unknown') { x.reviewReasons = [unknownInterestReason(amount)]; x.reviewed = false; }
+  });
+}
+
 export function applyAIResult(id, result) {
   return serial(() => doApplyAIResult(id, result));
 }
@@ -235,6 +270,16 @@ async function doApplyAIResult(id, result) {
   if (!entry) return;
   const rereading = Boolean(entry.reread);
   delete entry.reread;
+
+  // A new loan someone described: kept for them to finish adding on the Loans page.
+  const nl = result.new_loan;
+  if (nl?.mentioned && !rereading) {
+    await addLoanDraft({ name: nl.name, lender: nl.lender, amount: nl.amount, rate: nl.rate, firstDate: nl.first_payment_date, frequency: nl.frequency, count: nl.payment_count, payment: nl.payment_amount, said: entry.inputText || '' });
+    if (!result.is_expense || !result.expenses?.length) {
+      await removeEntry(id, { permanently: true });
+      return;
+    }
+  }
 
   if (!result.is_expense || !result.expenses?.length) {
     entry.aiStatus = 'done';
@@ -250,7 +295,13 @@ async function doApplyAIResult(id, result) {
   }
 
   const [first, ...rest] = result.expenses;
+  const loans = result.expenses.some((x) => x.loan) ? await listLoans() : [];
+  const asPayment = async (e, x) => {
+    const loan = x.loan && loans.find((l) => l.name === x.loan);
+    if (loan) await applyLoanPayment(e, loan, x);
+  };
   applyFields(entry, first, result.model);
+  await asPayment(entry, first);
   if (rest.length && rereading) {
     entry.reviewReasons.push(`The AI found ${rest.length + 1} purchases here; only the first was updated.`);
   }
@@ -263,6 +314,7 @@ async function doApplyAIResult(id, result) {
       copy.splitFrom = entry.id;
       copy.sheet = { dirty: true, receiptUrl: '', syncedAt: null };
       applyFields(copy, extra, result.model);
+      await asPayment(copy, extra);
       await putEntry(copy);
     }
   }

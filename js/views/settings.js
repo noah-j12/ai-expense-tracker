@@ -14,7 +14,7 @@ import { SheetsSettings } from './sheets-setup.js';
 import { BACKUP_MODES, BackupSettings } from './backup-setup.js';
 import { apiKeyInput, apiKeySteps } from './setup.js';
 
-export const APP_VERSION = '1.14.0';
+export const APP_VERSION = '1.15.0';
 
 export function goBack(fallback = '#/settings') {
   navBack(fallback);
@@ -54,6 +54,7 @@ function main() {
         navItem({ iconName: 'tag', label: 'Categories', value: String(s.categories.length), href: '#/settings/categories' }),
         navItem({ iconName: 'card', label: 'Payment methods', value: String(s.paymentMethods.length), href: '#/settings/payments' }),
         navItem({ iconName: 'building', label: 'Books', value: s.businesses.length > 1 ? String(s.businesses.length) : 'Just one', href: '#/settings/books' }),
+        navItem({ iconName: 'building', label: 'Loans', value: s.loans?.enabled ? 'On' : 'Off', href: '#/loans' }),
         navItem({ iconName: 'sparkle', label: 'AI', value: s.ai.apiKey ? MODELS.find((m) => m.id === s.ai.model)?.name || 'Connected' : 'Not connected', href: '#/settings/ai' }),
       ),
       h('div', { class: 'section-title' }, 'Where your expenses go'),

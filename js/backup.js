@@ -28,6 +28,7 @@ export async function watchForChanges() {
   const changed = () => { kvSet('backupChanged', true).catch(() => {}); };
   on('entries-changed', changed);
   on('settings-changed', changed);
+  on('loans-changed', changed);
 }
 
 async function saveState() {

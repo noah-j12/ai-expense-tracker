@@ -37,7 +37,7 @@ export function SetupView() {
   // Suggested, not required: Google Drive is picked to start with and can be changed.
   if (!draft.backup || draft.backup.mode === 'off') draft.backup = { mode: 'drive' };
 
-  const steps = [welcome, categories, payments, books, backup, ai, voice, finish];
+  const steps = [welcome, categories, payments, books, loans, backup, ai, voice, finish];
 
   function frame({ title, lead, content, next = 'Continue', onNext, skip, hideBack }) {
     const nextBtn = h('button', { class: 'btn primary', onclick: async () => {
@@ -157,6 +157,21 @@ export function SetupView() {
     });
   }
 
+  function loans() {
+    return frame({
+      title: 'Do you have loans to track?',
+      lead: 'Like equipment, vehicle, land or operating loans. The app keeps each balance and saves the interest part of every payment as an expense, ready for your accountant.',
+      content: choiceList({
+        options: [
+          { id: 'yes', name: 'Yes', hint: 'Add them after setup, or just mention one when you talk to it' },
+          { id: 'no', name: 'No', hint: 'You can turn it on later in Settings' },
+        ],
+        value: draft.loans?.enabled ? 'yes' : 'no',
+        onChange: (id) => { draft.loans = { ...draft.loans, enabled: id === 'yes' }; },
+      }),
+    });
+  }
+
   function backup() {
     return frame({
       title: 'Keep a backup?',
@@ -242,6 +257,7 @@ export function SetupView() {
           h('div', { class: 'list-item' }, icon('tag'), h('div', { class: 'grow' }, `${draft.categories.length} categories`)),
           h('div', { class: 'list-item' }, icon('share'), h('div', { class: 'grow' }, where)),
           h('div', { class: 'list-item' }, icon('cloud'), h('div', { class: 'grow' }, backupLine)),
+          draft.loans?.enabled ? h('div', { class: 'list-item' }, icon('building'), h('div', { class: 'grow' }, 'Loan tracking on: add your loans on the Loans page')) : null,
           h('div', { class: 'list-item' }, icon('key'), h('div', { class: 'grow' }, draft.ai.apiKey ? 'AI connected' : 'AI not connected yet')),
           h('div', { class: 'list-item' }, icon('mic'), h('div', { class: 'grow' }, `Voice: ${VOICE_MODES.find((m) => m.id === (draft.voice.openaiKey ? draft.voice.mode : 'keyboard'))?.name}`)),
         ),
@@ -250,6 +266,7 @@ export function SetupView() {
       next: nextRoute === '#/' ? 'Start using the app' : 'Continue',
       onNext: async () => {
         draft.setupDone = true;
+        if (draft.loans?.enabled && !draft.categories.some((c) => /interest/i.test(c))) draft.categories.push('Interest');
         await replaceSettings(draft);
         kick();
         location.hash = nextRoute;
